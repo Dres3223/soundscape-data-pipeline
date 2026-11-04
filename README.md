@@ -20,13 +20,14 @@ flowchart LR
 
     subgraph pg["PostgreSQL"]
         recordings[("raw.recordings")]
+        audiofeatures[("raw.audio_features")]
         staging[("staging")]:::planned
         marts[("marts")]:::planned
     end
 
     ingest["ingest<br/>Python"]
     features["features<br/>librosa"]
-    load["load"]:::planned
+    load["load<br/>upsert"]
     dbt["dbt"]:::planned
     dashboard["Dashboard"]:::planned
     airflow{{"Apache Airflow"}}:::planned
@@ -37,9 +38,9 @@ flowchart LR
     ingest --> recordings
     raw --> features --> parquet
     recordings --> features
-    parquet -.-> load -.-> staging
-    recordings -.-> dbt
-    staging -.-> dbt -.-> marts -.-> dashboard
+    parquet --> load --> audiofeatures
+    recordings & audiofeatures -.-> dbt
+    dbt -.-> staging -.-> marts -.-> dashboard
     airflow -. orchestrates .-> ingest & features & load & dbt
 
     classDef planned stroke-dasharray: 5 5, color:#888, stroke:#888
@@ -51,7 +52,7 @@ Solid lines and boxes are built; dashed ones are planned.
 |---|---|---|
 | Ingest | ✅ Built | Uploads raw audio to S3 and registers its metadata in Postgres (idempotent by SHA-256) |
 | Features | ✅ Built | Extracts audio features with librosa and writes Parquet partitioned by site and month |
-| Load | Planned (E3) | Loads features from Parquet into Postgres staging |
+| Load | ✅ Built | Upserts features from Parquet into `raw.audio_features` in Postgres |
 | dbt | Planned (E4) | Staging and mart models with data quality tests |
 | Dashboard | Planned (E4) | Soundscape by site and period |
 | Airflow | Planned (E3) | Orchestrates ingest → features → load with retries |
@@ -120,7 +121,16 @@ zero-crossing rate), partitioned in `s3://soundscape/features/site=<site>/month=
 Recordings that cannot be decoded go to `features_failed/`.
 Columns, types and units: [docs/features_schema.md](docs/features_schema.md).
 
-### 7. Verify
+### 7. Load features into Postgres
+```bash
+uv run python -m soundscape.load   # upsert the Parquet files into raw.audio_features
+```
+One transaction per run: new recordings are inserted, re-extracted ones
+(newer `extracted_at`) are updated, the rest are left unchanged; the log
+reports each count. Features of a recording missing from `raw.recordings`
+are rejected by a foreign key, and then nothing is loaded.
+
+### 8. Verify
 ```bash
 docker compose exec postgres psql -U soundscape -d soundscape \
   -c "SELECT site_code, recorded_at, duration_s FROM raw.recordings ORDER BY recorded_at LIMIT 5;"

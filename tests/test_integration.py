@@ -6,6 +6,7 @@ Run only the fast tests with: uv run pytest -m "not integration"
 """
 
 import io
+from datetime import UTC, datetime
 
 import numpy as np
 import psycopg
@@ -15,7 +16,7 @@ import soundfile as sf
 from botocore.exceptions import BotoCoreError, ClientError
 from psycopg import sql
 
-from soundscape import features, ingest
+from soundscape import features, ingest, load
 from soundscape.config import Settings
 from soundscape.storage import pg_connect, s3_client
 
@@ -128,3 +129,66 @@ def test_features_write_partitioned_parquet_and_are_idempotent(settings):
     assert table.column("spectral_centroid_hz")[0].as_py() == pytest.approx(
         1000, rel=0.05
     )
+
+
+def feature_rows(settings: Settings) -> dict[str, float]:
+    with pg_connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT file_name, spectral_centroid_hz FROM raw.audio_features"
+        ).fetchall()
+    return dict(rows)
+
+
+def put_table(settings: Settings, key: str, table) -> None:
+    features.put_parquet(s3_client(settings), settings.s3_bucket, key, table)
+
+
+def test_load_is_idempotent_and_updates_re_extracted_features(settings):
+    ingest.run(settings)
+    features.run(settings)
+
+    first = load.run(settings)
+    second = load.run(settings)
+    features.run(settings)  # re-extract: newer extracted_at
+    third = load.run(settings)
+
+    assert first == {"read": 2, "inserted": 2, "updated": 0, "unchanged": 0}
+    assert second == {"read": 2, "inserted": 0, "updated": 0, "unchanged": 2}
+    assert third == {"read": 2, "inserted": 0, "updated": 2, "unchanged": 0}
+    assert len(feature_rows(settings)) == 2
+
+
+def test_load_never_overwrites_with_an_older_extraction(settings):
+    ingest.run(settings)
+    results = features.run(settings)
+    load.run(settings)
+    before = feature_rows(settings)
+
+    # Same recordings, different values, but extracted long ago
+    recording, result = results[0]
+    result.features["spectral_centroid_hz"] = 1.0
+    old = datetime(2000, 1, 1, tzinfo=UTC)
+    tables, _ = features.build_tables([(recording, result)], 32000, 20, old)
+    for key, table in tables.items():
+        put_table(settings, key, table)
+
+    counts = load.run(settings)
+
+    assert counts["updated"] == 0
+    assert feature_rows(settings) == before
+
+
+def test_load_is_atomic_and_rejects_features_of_unknown_recordings(settings):
+    ingest.run(settings)
+    results = features.run(settings)
+
+    # Features for a recording that raw.recordings does not know
+    recording, result = results[0]
+    orphan = {**recording, "sha256": "f" * 64, "site_code": "T99"}
+    tables, _ = features.build_tables([(orphan, result)], 32000, 20, datetime.now(UTC))
+    for key, table in tables.items():
+        put_table(settings, key, table)
+
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        load.run(settings)
+    assert feature_rows(settings) == {}  # the valid rows were not loaded either
