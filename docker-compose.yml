@@ -5,6 +5,33 @@
 # Credentials come from .env (see .env.example).
 name: soundscape
 
+# Settings shared by every Airflow service (a YAML anchor, merged with <<:)
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: soundscape-airflow:3.3.2
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor  # tasks run inside the scheduler
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD in .env}@postgres:5432/airflow
+    # Encrypts passwords of Airflow connections stored in the metadata database
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?set AIRFLOW_FERNET_KEY in .env}
+    # Signs the tokens the components use to talk to the API server
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?set AIRFLOW_JWT_SECRET in .env}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./src:/opt/airflow/project/src  # live code for the editable install
+  depends_on: &airflow-common-depends-on
+    airflow-init:
+      condition: service_completed_successfully
+  restart: unless-stopped
+
 services:
   # Relational database: one row per recording (metadata) and, later, features
   postgres:
@@ -47,6 +74,84 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+
+  # One-shot: create Airflow's metadata database inside our Postgres
+  airflow-db-init:
+    image: postgres:18-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    command: >
+      psql -v ON_ERROR_STOP=1
+      -v airflow_password=${AIRFLOW_DB_PASSWORD}
+      -v app_db=${POSTGRES_DB}
+      -f /sql/create_airflow_db.sql
+    volumes:
+      - ./docker/postgres/create_airflow_db.sql:/sql/create_airflow_db.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot: migrate Airflow's schema and create the admin user
+  airflow-init:
+    <<: *airflow-common
+    # Fails if the migration fails; creates the user only when missing
+    entrypoint: /bin/bash
+    command:
+      - -euc
+      - |
+        airflow db migrate
+        if airflow users list --output plain | grep -qw admin; then
+          echo "User admin already exists"
+        else
+          airflow users create --role Admin --username admin \
+            --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+            --firstname Admin --lastname User --email admin@example.com
+        fi
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env}
+    depends_on:
+      airflow-db-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # Web interface and REST API: http://localhost:8080
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Decides what runs when; with LocalExecutor it also runs the tasks
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Parses the files in dags/ into DAGs
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
 volumes:
   pgdata:

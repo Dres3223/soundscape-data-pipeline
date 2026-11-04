@@ -1,0 +1,8 @@
+# Keep the image build context small and free of secrets:
+# the Dockerfile only needs pyproject.toml, README.md, LICENSE and src/
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+**/__pycache__

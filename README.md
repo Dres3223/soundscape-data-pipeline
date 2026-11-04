@@ -80,9 +80,10 @@ uv run bash scripts/download_sample.sh   # 16 recordings (~8 MB) for local devel
 
 ### 4. Start the services
 ```bash
-cp .env.example .env    # then replace the placeholder secrets
-docker compose up -d    # start PostgreSQL and RustFS
-docker compose ps       # both services should be "healthy"
+cp .env.example .env    # then replace the placeholder secrets (see comments inside)
+docker compose build    # build the Airflow image (first time, ~1 min)
+docker compose up -d    # start PostgreSQL, RustFS and Airflow
+docker compose ps       # every service should be "healthy"
 ```
 
 | Service | URL | Purpose |
@@ -90,6 +91,14 @@ docker compose ps       # both services should be "healthy"
 | PostgreSQL 18 | `localhost:5432` | Recording metadata and audio features |
 | RustFS (S3 API) | `http://localhost:9000` | Raw audio files (S3-compatible object storage) |
 | RustFS console | http://localhost:9001/rustfs/console/ | Browse buckets in the browser |
+| Airflow 3.3 | http://localhost:8080 | Orchestration UI; user `admin`, password `AIRFLOW_ADMIN_PASSWORD` from `.env` |
+
+On the first `up`, two one-shot services prepare Airflow and then exit:
+`airflow-db-init` creates its metadata database inside PostgreSQL and
+`airflow-init` migrates it and creates the `admin` user. Airflow reads DAGs
+from [`dags/`](dags/); `smoke_check` is a manual DAG that checks tasks can
+import the `soundscape` package. Code changes in `src/` apply without
+rebuilding; run `docker compose build` again only when dependencies change.
 
 Stop the services with `docker compose down`; data is kept in Docker volumes.
 Why RustFS instead of MinIO: [ADR 0001](docs/adr/0001-s3-compatible-storage.md).
