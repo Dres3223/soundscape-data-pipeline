@@ -11,7 +11,15 @@ x-airflow-common: &airflow-common
     context: .
     dockerfile: docker/airflow/Dockerfile
   image: soundscape-airflow:3.3.2
+  # Pipeline settings (credentials, bucket...) for soundscape's Settings
+  env_file: .env
   environment: &airflow-common-env
+    # Inside the Compose network each service is reached by its name, and
+    # "localhost" would be the container itself; these override .env
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    S3_ENDPOINT_URL: http://rustfs:9000
+    INGEST_SOURCE_DIR: /opt/airflow/data/raw/birdclef/train_soundscapes
     AIRFLOW__CORE__EXECUTOR: LocalExecutor  # tasks run inside the scheduler
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD in .env}@postgres:5432/airflow
@@ -27,6 +35,7 @@ x-airflow-common: &airflow-common
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./src:/opt/airflow/project/src  # live code for the editable install
+    - ./data:/opt/airflow/data:ro     # source audio, read-only: tasks never modify it
   depends_on: &airflow-common-depends-on
     airflow-init:
       condition: service_completed_successfully

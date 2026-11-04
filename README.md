@@ -30,7 +30,7 @@ flowchart LR
     load["load<br/>upsert"]
     dbt["dbt"]:::planned
     dashboard["Dashboard"]:::planned
-    airflow{{"Apache Airflow"}}:::planned
+    airflow{{"Apache Airflow"}}
 
     kaggle --> ingest
     xenocanto -.-> ingest
@@ -41,7 +41,8 @@ flowchart LR
     parquet --> load --> audiofeatures
     recordings & audiofeatures -.-> dbt
     dbt -.-> staging -.-> marts -.-> dashboard
-    airflow -. orchestrates .-> ingest & features & load & dbt
+    airflow -- orchestrates --> ingest & features & load
+    airflow -.-> dbt
 
     classDef planned stroke-dasharray: 5 5, color:#888, stroke:#888
 ```
@@ -55,7 +56,7 @@ Solid lines and boxes are built; dashed ones are planned.
 | Load | ✅ Built | Upserts features from Parquet into `raw.audio_features` in Postgres |
 | dbt | Planned (E4) | Staging and mart models with data quality tests |
 | Dashboard | Planned (E4) | Soundscape by site and period |
-| Airflow | Planned (E3) | Orchestrates ingest → features → load with retries |
+| Airflow | ✅ Built | Runs ingest → features → load daily, with retries; re-running a date duplicates nothing |
 
 ## How to run
 
@@ -130,12 +131,20 @@ One transaction per run: new recordings are inserted, re-extracted ones
 reports each count. Features of a recording missing from `raw.recordings`
 are rejected by a foreign key, and then nothing is loaded.
 
-### 8. Verify
+### 8. Or let Airflow run the whole pipeline
+Steps 5–7 are what the `soundscape_pipeline` DAG runs every day, in order,
+retrying each task twice. In http://localhost:8080 turn the DAG on (or use
+*Trigger*), then open a run to see each task's state and logs; the `load`
+log reports the inserted, updated and unchanged counts. *Clear* re-runs a
+date safely: every stage is idempotent.
+
+### 9. Verify
 ```bash
 docker compose exec postgres psql -U soundscape -d soundscape \
   -c "SELECT site_code, recorded_at, duration_s FROM raw.recordings ORDER BY recorded_at LIMIT 5;"
 uv run pytest                        # all tests, with a coverage report
 uv run pytest -m "not integration"   # only the fast tests (no services needed)
+uv run --group airflow pytest tests/test_dags.py   # DAGs load (installs Airflow)
 ```
 
 ## License

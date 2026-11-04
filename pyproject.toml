@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+airflow = [
+    "apache-airflow==3.3.2",
+]
 dev = [
     "duckdb>=2.0.0",
     "kaggle>=2.2.5",
