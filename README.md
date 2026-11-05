@@ -66,6 +66,18 @@ Solid lines and boxes are built; dashed ones are planned.
 - A Kaggle API token ([how to get one](https://www.kaggle.com/docs/api)) saved in
   `~/.kaggle/access_token`, and the
   [competition rules](https://www.kaggle.com/competitions/birdclef-2025/rules) accepted
+- `make` (included in macOS and Linux)
+
+### Quick start
+```bash
+make setup   # dependencies, git hooks, and .env with random secrets
+make data    # dataset metadata and the 16-recording sample from Kaggle
+make up      # build and start Postgres, RustFS, Airflow and the dashboard
+make run     # ingest → features → load → dbt build
+```
+Then open the dashboard at http://localhost:8501. `make` alone lists every
+command (`make test`, `make lint`, `make down`...). The numbered steps below
+are what these commands run, one at a time.
 
 ### 2. Install dependencies
 ```bash
@@ -85,9 +97,9 @@ uv run bash scripts/download_sample.sh H02 H24 O203 H85   # ~330 MB
 
 ### 4. Start the services
 ```bash
-cp .env.example .env    # then replace the placeholder secrets (see comments inside)
+bash scripts/make_env.sh   # .env from .env.example, with random secrets
 docker compose build    # build the Airflow image (first time, ~1 min)
-docker compose up -d    # start PostgreSQL, RustFS and Airflow
+docker compose up -d    # start PostgreSQL, RustFS, Airflow and the dashboard
 docker compose ps       # every service should be "healthy"
 ```
 
