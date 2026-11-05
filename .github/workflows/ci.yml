@@ -97,3 +97,49 @@ jobs:
         with:
           enable-cache: true
       - run: make test-dags
+
+  # Continuous delivery: only pushes to main, and only once every check passed
+  publish:
+    name: Publish image to GHCR
+    needs: [lint, test, dags]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The only job allowed to write packages; the token expires with the run
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Image name and tags
+        # Registry names must be lowercase (the owner is "Dres3223")
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "SHA_TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Build
+        run: >
+          docker build
+          --label org.opencontainers.image.revision="$GITHUB_SHA"
+          -t "$IMAGE:$SHA_TAG" -t "$IMAGE:latest" .
+      - name: Smoke test
+        run: |
+          docker run --rm "$IMAGE:$SHA_TAG" --help
+          docker run --rm --entrypoint python "$IMAGE:$SHA_TAG" \
+            -c "import soundscape.ingest, soundscape.features, soundscape.load"
+      - name: Log in to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Push
+        run: |
+          docker push "$IMAGE:$SHA_TAG"
+          docker push "$IMAGE:latest"
+      - name: Size in the run summary
+        run: |
+          size=$(docker image inspect "$IMAGE:$SHA_TAG" --format '{{.Size}}')
+          {
+            echo "### Published image"
+            echo "- \`$IMAGE:$SHA_TAG\` and \`$IMAGE:latest\`"
+            echo "- Size: $((size / 1000000)) MB"
+          } >> "$GITHUB_STEP_SUMMARY"

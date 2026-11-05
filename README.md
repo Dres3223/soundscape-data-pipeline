@@ -181,6 +181,21 @@ uv run pytest -m "not integration"   # only the fast tests (no services needed)
 uv run --group airflow pytest tests/test_dags.py   # DAGs load (installs Airflow)
 ```
 
+## Container image
+
+Every push to `main` that passes CI publishes the pipeline as an image on
+GitHub Container Registry, tagged with the commit (`sha-<commit>`) and `latest`.
+It holds only the pipeline package and its locked dependencies (multi-stage
+build, non-root user): about **1.2 GB on disk, ~280 MB to download**, against
+3.9 GB for the Airflow image. Most of it is numba/llvmlite, scipy and pyarrow.
+
+```bash
+docker run --env-file .env ghcr.io/dres3223/soundscape-data-pipeline ingest   # or features, load
+```
+Inside Docker, point the settings at reachable hosts (for example
+`-e POSTGRES_HOST=... -e S3_ENDPOINT_URL=...`) and mount the recordings for
+`ingest` (`-v ...:/data:ro -e INGEST_SOURCE_DIR=/data/...`).
+
 ## License
 The code is released under the [MIT](LICENSE) license.
 

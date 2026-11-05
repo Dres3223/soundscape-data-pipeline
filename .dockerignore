@@ -1,8 +1,10 @@
-# Keep the image build context small and free of secrets:
-# the Dockerfile only needs pyproject.toml, README.md, LICENSE and src/
+# Keep the image build context small and free of secrets (.env, data/,
+# .venv never reach Docker): only what the Dockerfiles copy is sent
 *
 !pyproject.toml
+!uv.lock
 !README.md
 !LICENSE
 !src/
+!docker/entrypoint.sh
 **/__pycache__
