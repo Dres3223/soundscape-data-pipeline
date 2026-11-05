@@ -1,7 +1,9 @@
 # One-step commands for the pipeline. Run `make` to list them.
 # First time on a new machine: make setup && make data && make up && make run
 
-DBT := uv run --env-file .env --group dbt dbt
+# .env only when it exists: in CI the settings come from environment variables
+ENV_FILE := $(if $(wildcard .env),--env-file .env)
+DBT := uv run $(ENV_FILE) --group dbt dbt
 DBT_ARGS := --project-dir dbt --profiles-dir dbt
 
 .DEFAULT_GOAL := help
@@ -35,7 +37,7 @@ run: ## Run the pipeline once: ingest, features, load, then dbt build
 	$(DBT) build $(DBT_ARGS)
 
 test: ## Run the tests with coverage (integration tests need `make up`)
-	uv run pytest
+	uv run pytest $(PYTEST_ARGS)
 
 test-dags: ## Check the Airflow DAGs load (installs Airflow in .venv)
 	uv run --group airflow pytest tests/test_dags.py --no-cov

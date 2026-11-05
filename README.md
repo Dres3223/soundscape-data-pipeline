@@ -1,5 +1,7 @@
 # Soundscape Data Pipeline
 
+[![CI](https://github.com/Dres3223/soundscape-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Dres3223/soundscape-data-pipeline/actions/workflows/ci.yml)
+
 Data pipeline that processes field recordings from El Silencio Nature Reserve (Colombia).
 
 > Work in progress. Data source and decisions: [docs/data_source.md](docs/data_source.md)

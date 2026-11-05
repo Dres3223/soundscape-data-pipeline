@@ -1,0 +1,99 @@
+# Continuous integration: every push and pull request is checked on a clean
+# machine, with the same `make` commands used locally.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege: this workflow only needs to read the repository
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run that became obsolete
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (pre-commit hooks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Actions pinned to a commit: a tag can be moved, a commit cannot
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: make lint
+
+  test:
+    name: Tests and end-to-end pipeline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Real Postgres and S3 (RustFS), alive only for this job
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: soundscape
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: soundscape
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U soundscape -d soundscape"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      rustfs:
+        image: rustfs/rustfs:1.0.4
+        env:
+          RUSTFS_ACCESS_KEY: ci-access-key
+          RUSTFS_SECRET_KEY: ci-only-secret-key
+          RUSTFS_ADDRESS: ":9000"
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9000/minio/health/ready"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    # Read by soundscape's Settings and by dbt's profiles.yml.
+    # Throwaway values for throwaway services: not real secrets.
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_USER: soundscape
+      POSTGRES_PASSWORD: ci-only-password
+      POSTGRES_DB: soundscape
+      S3_ENDPOINT_URL: http://localhost:9000
+      S3_ACCESS_KEY: ci-access-key
+      S3_SECRET_KEY: ci-only-secret-key
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      # Same script as the postgres-init service: dbt grants SELECT on the
+      # marts to this role, so it must exist before dbt build
+      - name: Create the dashboard's read-only role
+        env:
+          PGPASSWORD: ci-only-password
+        run: >
+          psql -h localhost -U soundscape -d soundscape -v ON_ERROR_STOP=1
+          -v dashboard_password=ci-only-dashboard -v app_db=soundscape
+          -v app_user=soundscape -f docker/postgres/create_dashboard_role.sql
+      - name: Unit and integration tests, coverage of at least 70 %
+        run: make test PYTEST_ARGS=--cov-fail-under=70
+      - name: "End to end: synthetic recordings → ingest → features → load → dbt build"
+        run: |
+          uv run python scripts/make_synthetic_recordings.py
+          make run
+
+  dags:
+    name: Airflow DAGs load
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: true
+      - run: make test-dags
