@@ -50,3 +50,6 @@ dbt/logs/
 
 # macOS
 .DS_Store
+
+# dbt: anonymous id it creates for usage statistics
+dbt/.user.yml

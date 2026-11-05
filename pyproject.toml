@@ -20,6 +20,10 @@ dependencies = [
 airflow = [
     "apache-airflow==3.3.2",
 ]
+dbt = [
+    "dbt-core>=1.12.6",
+    "dbt-postgres>=1.11.0",
+]
 dev = [
     "duckdb>=2.0.0",
     "kaggle>=2.2.5",

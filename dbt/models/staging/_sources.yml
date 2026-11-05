@@ -1,0 +1,11 @@
+version: 2
+
+# Tables written by the pipeline (src/soundscape): dbt reads them, never writes them
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: recordings
+        description: One row per ingested recording (soundscape.ingest).
+      - name: audio_features
+        description: Audio features per recording (soundscape.features, loaded by soundscape.load).

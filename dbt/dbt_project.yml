@@ -1,0 +1,23 @@
+# dbt project: turns the raw tables (raw.recordings, raw.audio_features)
+# into staging views and mart tables for analysis and the dashboard.
+name: soundscape
+version: "1.0.0"
+profile: soundscape  # connection settings live in profiles.yml
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  soundscape:
+    staging:
+      +schema: staging
+      +materialized: view   # always up to date, no storage
+    marts:
+      +schema: marts
+      +materialized: table  # precomputed, fast for the dashboard
+
+seeds:
+  soundscape:
+    +schema: staging
