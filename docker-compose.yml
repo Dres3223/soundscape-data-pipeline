@@ -61,6 +61,8 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    # Come back after a Docker or machine restart, like the services that need it
+    restart: unless-stopped
 
   # S3-compatible object storage: raw audio files (swapped for AWS S3 in epic E6)
   rustfs:
@@ -83,6 +85,7 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
 
   # One-shot: prepare our Postgres for the other services (idempotent scripts):
   # Airflow's metadata database and the dashboard's read-only role
