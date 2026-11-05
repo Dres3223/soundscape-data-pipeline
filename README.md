@@ -21,14 +21,14 @@ flowchart LR
     subgraph pg["PostgreSQL"]
         recordings[("raw.recordings")]
         audiofeatures[("raw.audio_features")]
-        staging[("staging")]:::planned
-        marts[("marts")]:::planned
+        staging[("staging")]
+        marts[("marts")]
     end
 
     ingest["ingest<br/>Python"]
     features["features<br/>librosa"]
     load["load<br/>upsert"]
-    dbt["dbt"]:::planned
+    dbt["dbt<br/>models + tests"]
     dashboard["Dashboard"]:::planned
     airflow{{"Apache Airflow"}}
 
@@ -39,8 +39,8 @@ flowchart LR
     raw --> features --> parquet
     recordings --> features
     parquet --> load --> audiofeatures
-    recordings & audiofeatures -.-> dbt
-    dbt -.-> staging -.-> marts -.-> dashboard
+    recordings & audiofeatures --> dbt
+    dbt --> staging --> marts -.-> dashboard
     airflow -- orchestrates --> ingest & features & load
     airflow -.-> dbt
 
@@ -54,7 +54,7 @@ Solid lines and boxes are built; dashed ones are planned.
 | Ingest | ✅ Built | Uploads raw audio to S3 and registers its metadata in Postgres (idempotent by SHA-256) |
 | Features | ✅ Built | Extracts audio features with librosa and writes Parquet partitioned by site and month |
 | Load | ✅ Built | Upserts features from Parquet into `raw.audio_features` in Postgres |
-| dbt | Planned (E4) | Staging and mart models with data quality tests |
+| dbt | ✅ Built | Staging views and a mart per site and period of the day, with 40 data tests |
 | Dashboard | Planned (E4) | Soundscape by site and period |
 | Airflow | ✅ Built | Runs ingest → features → load daily, with retries; re-running a date duplicates nothing |
 
@@ -78,6 +78,9 @@ uv run pre-commit install   # enable the git hooks (once)
 uv run bash scripts/download_metadata.sh
 uv run bash scripts/list_files.sh
 uv run bash scripts/download_sample.sh   # 16 recordings (~8 MB) for local development
+# Optional: every recording of some sites (~178 each), so the marts can
+# compare periods of the day within a site
+uv run bash scripts/download_sample.sh H02 H24 O203 H85   # ~330 MB
 ```
 
 ### 4. Start the services
@@ -131,14 +134,25 @@ One transaction per run: new recordings are inserted, re-extracted ones
 reports each count. Features of a recording missing from `raw.recordings`
 are rejected by a foreign key, and then nothing is loaded.
 
-### 8. Or let Airflow run the whole pipeline
+### 8. Model the data with dbt
+```bash
+uv run --env-file .env --group dbt dbt deps  --project-dir dbt --profiles-dir dbt
+uv run --env-file .env --group dbt dbt build --project-dir dbt --profiles-dir dbt
+```
+`dbt build` loads the seed, builds the staging views and the mart, and runs
+every data test, skipping whatever depends on a failed test. Models, periods
+of the day and tests: [dbt/README.md](dbt/README.md).
+
+![dbt lineage graph](docs/img/dbt_lineage.png)
+
+### 9. Or let Airflow run the whole pipeline
 Steps 5–7 are what the `soundscape_pipeline` DAG runs every day, in order,
 retrying each task twice. In http://localhost:8080 turn the DAG on (or use
 *Trigger*), then open a run to see each task's state and logs; the `load`
 log reports the inserted, updated and unchanged counts. *Clear* re-runs a
 date safely: every stage is idempotent.
 
-### 9. Verify
+### 10. Verify
 ```bash
 docker compose exec postgres psql -U soundscape -d soundscape \
   -c "SELECT site_code, recorded_at, duration_s FROM raw.recordings ORDER BY recorded_at LIMIT 5;"

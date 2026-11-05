@@ -1,0 +1,111 @@
+version: 2
+
+models:
+  - name: stg_recordings
+    description: One row per recording, with clear names and types.
+    columns:
+      - name: recording_id
+        description: SHA-256 of the audio file (raw.recordings.sha256).
+        data_tests: [unique, not_null]
+      - name: file_name
+        description: Original file name, SITE_YYYYMMDD_HHMMSS.ogg.
+      - name: site_code
+        description: Recording site, e.g. H02 or O203.
+        data_tests: [not_null]
+      - name: recorded_at_local
+        description: Start of the recording in Colombian local time (UTC-5), from the file name.
+        data_tests: [not_null]
+      - name: recorded_date
+        description: Local date of the recording.
+      - name: recorded_hour
+        description: Local hour of the recording, 0 to 23.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 23
+      - name: duration_s
+        description: Length of the recording in seconds.
+      - name: sample_rate_hz
+        description: Sample rate of the file in Hz.
+      - name: channels
+        description: Number of audio channels.
+      - name: size_bytes
+        description: File size in bytes.
+      - name: s3_key
+        description: Location of the raw file in the bucket.
+      - name: source
+        description: Where the recording comes from, e.g. birdclef-2025.
+      - name: ingested_at
+        description: When the pipeline registered the recording.
+
+  - name: stg_audio_features
+    description: >
+      One row per recording with its audio features and the ecological period
+      of the day it belongs to (from the day_periods seed).
+    data_tests:
+      # The INNER JOIN with day_periods must not drop any recording
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: source('raw', 'audio_features')
+    columns:
+      - name: recording_id
+        description: SHA-256 of the audio file.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_recordings')
+                field: recording_id
+      - name: site_code
+        description: Recording site, e.g. H02 or O203.
+        data_tests: [not_null]
+      - name: recorded_at_local
+        description: Start of the recording in Colombian local time (UTC-5).
+      - name: recorded_date
+        description: Local date of the recording.
+      - name: recorded_hour
+        description: Local hour of the recording, 0 to 23.
+      - name: period
+        description: Ecological period of the day, dawn, day, dusk or night.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["dawn", "day", "dusk", "night"]
+      - name: period_order
+        description: Position of the period in the day, 1 (dawn) to 4 (night).
+      - name: duration_s
+        description: Length of the decoded audio in seconds.
+      - name: spectral_centroid_hz
+        description: Mean spectral centroid in Hz; higher means a brighter, higher-pitched sound.
+        data_tests:
+          # Up to the Nyquist frequency of 32 kHz audio
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 16000
+      - name: spectral_bandwidth_hz
+        description: Mean spread of the energy around the centroid, in Hz.
+      - name: rms
+        description: Mean RMS energy, amplitude from 0 to 1.
+      - name: rms_dbfs
+        description: Mean loudness in decibels relative to full scale (dBFS); 0 is the loudest possible.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+      - name: zero_crossing_rate
+        description: Mean share of samples where the signal changes sign, 0 to 1.
+      - name: mfcc_mean
+        description: Mean of each MFCC over time; one value per coefficient.
+      - name: mfcc_std
+        description: Standard deviation of each MFCC over time.
+      - name: n_mfcc
+        description: Number of MFCC computed.
+      - name: sample_rate_hz
+        description: Sample rate used for the extraction, in Hz.
+      - name: extracted_at
+        description: When the features were computed.

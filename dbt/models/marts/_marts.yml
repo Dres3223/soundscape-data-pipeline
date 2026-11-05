@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: mart_soundscape_by_point_period
+    description: >
+      One row per site and period of the day: how loud, how bright and how
+      variable the soundscape is, and how each period compares with the
+      other periods of the same site (window functions).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [site_code, period]
+    columns:
+      - name: site_code
+        description: Recording site.
+        data_tests: [not_null]
+      - name: period
+        description: Ecological period of the day, dawn, day, dusk or night.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["dawn", "day", "dusk", "night"]
+      - name: period_order
+        description: Position of the period in the day, 1 (dawn) to 4 (night).
+      - name: n_recordings
+        description: Recordings of this site made in this period.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+      - name: avg_rms_dbfs
+        description: Mean loudness in dBFS.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+      - name: stddev_rms_dbfs
+        description: Standard deviation of the loudness in dB; null when there is a single recording.
+        data_tests:
+          - not_null:
+              config:
+                where: "n_recordings > 1"
+      - name: avg_spectral_centroid_hz
+        description: Mean spectral centroid in Hz.
+      - name: stddev_spectral_centroid_hz
+        description: Standard deviation of the spectral centroid in Hz; null when there is a single recording.
+        data_tests:
+          - not_null:
+              config:
+                where: "n_recordings > 1"
+      - name: avg_spectral_bandwidth_hz
+        description: Mean spectral bandwidth in Hz.
+      - name: avg_zero_crossing_rate
+        description: Mean zero-crossing rate, 0 to 1.
+      - name: rms_dbfs_vs_site_avg
+        description: Loudness of this period minus the site's average over all its recordings, in dB.
+      - name: loudness_rank_in_site
+        description: Rank of the period by loudness within its site, 1 being the loudest.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 4
+      - name: rms_dbfs_change_vs_previous
+        description: Loudness change from the previous period of the day, in dB; null for dawn.
+      - name: centroid_hz_change_vs_previous
+        description: Spectral centroid change from the previous period of the day, in Hz; null for dawn.

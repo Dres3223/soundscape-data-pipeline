@@ -38,4 +38,19 @@ uv run --env-file .env --group dbt dbt build --project-dir dbt --profiles-dir db
 ```
 
 `dbt build` loads the seed, builds every model in dependency order and runs
-the tests.
+the tests; a failing test skips everything downstream of it. Browse the
+models, columns and lineage with
+`dbt docs generate` and `dbt docs serve --port 8081` (same prefix as above).
+Descriptions are also written to Postgres as comments (`persist_docs`).
+
+## Tests
+
+| Where | What is checked |
+|---|---|
+| Sources | `sha256` unique and not null; every feature row belongs to a recording |
+| Seed | Each hour 0–23 exactly once (`assert_day_periods_cover_every_hour`), valid periods |
+| Staging | Unique ids, valid periods, dBFS ≤ 0, centroid within 0–16 kHz, and `stg_audio_features` has as many rows as its source (the join with the periods drops none) |
+| Mart | One row per site and period, ranks 1–4, at least one recording, variability not null when there are several recordings |
+
+Generic tests from dbt and [dbt_utils](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/)
+(`dbt deps` installs it).

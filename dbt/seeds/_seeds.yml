@@ -1,0 +1,37 @@
+version: 2
+
+seeds:
+  - name: day_periods
+    description: >
+      Ecological period of each hour of the day, in local time (UTC-5).
+      El Silencio is at 6.76° N, so sunrise (~05:45) and sunset (~18:00)
+      barely change during the year and fixed hours work all year round.
+    config:
+      column_types:
+        hour_of_day: integer
+        period: text
+        period_order: integer
+    columns:
+      - name: hour_of_day
+        description: Hour of the day in local time, 0 to 23.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 23
+      - name: period
+        description: "dawn (05–07, dawn chorus), day (08–16), dusk (17–18, dusk chorus) or night (19–04)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["dawn", "day", "dusk", "night"]
+      - name: period_order
+        description: Position of the period in the day, from 1 (dawn) to 4 (night).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]

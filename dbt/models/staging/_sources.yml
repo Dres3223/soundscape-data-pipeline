@@ -4,8 +4,27 @@ version: 2
 sources:
   - name: raw
     schema: raw
+    description: Raw layer loaded by the Python pipeline, stored as the source describes it.
     tables:
       - name: recordings
         description: One row per ingested recording (soundscape.ingest).
+        columns:
+          - name: sha256
+            description: SHA-256 of the audio file; the idempotency key of the ingestion.
+            data_tests: [unique, not_null]
+          - name: file_name
+            description: Original file name, SITE_YYYYMMDD_HHMMSS.ogg.
+            data_tests: [unique, not_null]
+
       - name: audio_features
         description: Audio features per recording (soundscape.features, loaded by soundscape.load).
+        columns:
+          - name: sha256
+            description: Recording the features belong to.
+            data_tests:
+              - unique
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('raw', 'recordings')
+                    field: sha256

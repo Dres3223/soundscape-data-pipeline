@@ -11,6 +11,10 @@ clean-targets: ["target", "dbt_packages"]
 
 models:
   soundscape:
+    # Also write descriptions as COMMENTs in Postgres, visible from any client
+    +persist_docs:
+      relation: true
+      columns: true
     staging:
       +schema: staging
       +materialized: view   # always up to date, no storage
