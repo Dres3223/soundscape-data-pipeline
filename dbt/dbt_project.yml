@@ -21,6 +21,10 @@ models:
     marts:
       +schema: marts
       +materialized: table  # precomputed, fast for the dashboard
+      # Re-applied on every build (the table is recreated): the dashboard's
+      # read-only role, created by docker/postgres/create_dashboard_role.sql
+      +grants:
+        select: ["dashboard"]
 
 seeds:
   soundscape:

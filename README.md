@@ -29,7 +29,7 @@ flowchart LR
     features["features<br/>librosa"]
     load["load<br/>upsert"]
     dbt["dbt<br/>models + tests"]
-    dashboard["Dashboard"]:::planned
+    dashboard["Dashboard<br/>Streamlit"]
     airflow{{"Apache Airflow"}}
 
     kaggle --> ingest
@@ -40,7 +40,7 @@ flowchart LR
     recordings --> features
     parquet --> load --> audiofeatures
     recordings & audiofeatures --> dbt
-    dbt --> staging --> marts -.-> dashboard
+    dbt --> staging --> marts --> dashboard
     airflow -- orchestrates --> ingest & features & load
     airflow -.-> dbt
 
@@ -55,7 +55,7 @@ Solid lines and boxes are built; dashed ones are planned.
 | Features | ✅ Built | Extracts audio features with librosa and writes Parquet partitioned by site and month |
 | Load | ✅ Built | Upserts features from Parquet into `raw.audio_features` in Postgres |
 | dbt | ✅ Built | Staging views and a mart per site and period of the day, with 40 data tests |
-| Dashboard | Planned (E4) | Soundscape by site and period |
+| Dashboard | ✅ Built | Streamlit app over the mart: loudness by site and period, one site through the day |
 | Airflow | ✅ Built | Runs ingest → features → load daily, with retries; re-running a date duplicates nothing |
 
 ## How to run
@@ -97,9 +97,10 @@ docker compose ps       # every service should be "healthy"
 | RustFS (S3 API) | `http://localhost:9000` | Raw audio files (S3-compatible object storage) |
 | RustFS console | http://localhost:9001/rustfs/console/ | Browse buckets in the browser |
 | Airflow 3.3 | http://localhost:8080 | Orchestration UI; user `admin`, password `AIRFLOW_ADMIN_PASSWORD` from `.env` |
+| Dashboard | http://localhost:8501 | Soundscape by site and period (after `dbt build`) |
 
 On the first `up`, two one-shot services prepare Airflow and then exit:
-`airflow-db-init` creates its metadata database inside PostgreSQL and
+`postgres-init` creates Airflow's metadata database and the dashboard's read-only role, and
 `airflow-init` migrates it and creates the `admin` user. Airflow reads DAGs
 from [`dags/`](dags/); `smoke_check` is a manual DAG that checks tasks can
 import the `soundscape` package. Code changes in `src/` apply without
@@ -144,6 +145,11 @@ every data test, skipping whatever depends on a failed test. Models, periods
 of the day and tests: [dbt/README.md](dbt/README.md).
 
 ![dbt lineage graph](docs/img/dbt_lineage.png)
+
+The dashboard at http://localhost:8501 reads the mart with a read-only role
+(`dashboard`, allowed to read `marts` only):
+
+![Soundscape dashboard](docs/img/dashboard.png)
 
 ### 9. Or let Airflow run the whole pipeline
 Steps 5–7 are what the `soundscape_pipeline` DAG runs every day, in order,

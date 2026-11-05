@@ -20,6 +20,10 @@ dependencies = [
 airflow = [
     "apache-airflow==3.3.2",
 ]
+dashboard = [
+    "psycopg[binary]>=3.3.6",
+    "streamlit>=1.66.1",
+]
 dbt = [
     "dbt-core>=1.12.6",
     "dbt-postgres>=1.11.0",

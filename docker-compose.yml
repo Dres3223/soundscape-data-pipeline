@@ -84,8 +84,9 @@ services:
       retries: 10
       start_period: 10s
 
-  # One-shot: create Airflow's metadata database inside our Postgres
-  airflow-db-init:
+  # One-shot: prepare our Postgres for the other services (idempotent scripts):
+  # Airflow's metadata database and the dashboard's read-only role
+  postgres-init:
     image: postgres:18-alpine
     environment:
       PGHOST: postgres
@@ -95,10 +96,13 @@ services:
     command: >
       psql -v ON_ERROR_STOP=1
       -v airflow_password=${AIRFLOW_DB_PASSWORD}
+      -v dashboard_password=${DASHBOARD_DB_PASSWORD:?set DASHBOARD_DB_PASSWORD in .env}
       -v app_db=${POSTGRES_DB}
+      -v app_user=${POSTGRES_USER}
       -f /sql/create_airflow_db.sql
+      -f /sql/create_dashboard_role.sql
     volumes:
-      - ./docker/postgres/create_airflow_db.sql:/sql/create_airflow_db.sql:ro
+      - ./docker/postgres:/sql:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,7 +127,7 @@ services:
       <<: *airflow-common-env
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env}
     depends_on:
-      airflow-db-init:
+      postgres-init:
         condition: service_completed_successfully
     restart: "no"
 
@@ -161,6 +165,28 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  # Soundscape dashboard (Streamlit): http://localhost:8501
+  dashboard:
+    build:
+      context: dashboard
+    image: soundscape-dashboard:1.0
+    environment:
+      DASHBOARD_DB_HOST: postgres
+      DASHBOARD_DB_NAME: ${POSTGRES_DB}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-8501}:8501"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   pgdata:
