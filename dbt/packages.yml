@@ -1,5 +1,7 @@
 # Installed with `dbt deps` into dbt_packages/ (git-ignored);
-# package-lock.yml pins the exact version that was installed.
+# package-lock.yml pins the exact commit that was installed.
+# Taken from GitHub rather than hub.getdbt.com: same package and version,
+# one service less to depend on (hub.getdbt.com is only an index of it).
 packages:
-  - package: dbt-labs/dbt_utils
-    version: [">=1.4.0", "<2.0.0"]
+  - git: https://github.com/dbt-labs/dbt-utils.git
+    revision: 1.4.1
