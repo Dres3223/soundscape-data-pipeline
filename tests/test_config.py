@@ -1,4 +1,5 @@
 from soundscape.config import Settings
+from soundscape.storage import s3_client
 
 REQUIRED = {
     "POSTGRES_USER": "user",
@@ -28,3 +29,21 @@ def test_secrets_are_hidden_when_printed(monkeypatch):
     printed = repr(make_settings(monkeypatch))
     assert "pg-pass-7f3a" not in printed
     assert "s3-pass-9c1e" not in printed
+
+
+def addressing_style(endpoint: str | None) -> str:
+    settings = Settings(
+        _env_file=None,
+        postgres_user="u",
+        postgres_password="p",
+        postgres_db="d",
+        s3_access_key="k",
+        s3_secret_key="s",
+        s3_endpoint_url=endpoint,
+    )
+    return s3_client(settings).meta.config.s3["addressing_style"]
+
+
+def test_path_style_only_with_a_custom_endpoint():
+    assert addressing_style("http://localhost:9000") == "path"
+    assert addressing_style(None) == "auto"

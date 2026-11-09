@@ -1,8 +1,14 @@
 from datetime import datetime
 
 import pytest
+from botocore.exceptions import ClientError
 
-from soundscape.ingest import RecordingName, build_s3_key, parse_file_name
+from soundscape.ingest import (
+    RecordingName,
+    build_s3_key,
+    ensure_bucket,
+    parse_file_name,
+)
 
 
 @pytest.mark.parametrize(
@@ -39,3 +45,36 @@ def test_build_s3_key_is_hive_partitioned():
     key = build_s3_key("birdclef-2025", name, "H02_20230422_014500.ogg")
     expected = "raw/birdclef-2025/site=H02/date=2023-04-22/H02_20230422_014500.ogg"
     assert key == expected
+
+
+class BucketS3:
+    """A client whose head_bucket answers with the given HTTP status."""
+
+    def __init__(self, status: int):
+        self.status = status
+        self.created = []
+
+    def head_bucket(self, Bucket):  # noqa: N803 (boto3's argument name)
+        if self.status != 200:
+            response = {"ResponseMetadata": {"HTTPStatusCode": self.status}}
+            raise ClientError(response, "HeadBucket")
+
+    def create_bucket(self, Bucket):  # noqa: N803
+        self.created.append(Bucket)
+
+
+@pytest.mark.parametrize(
+    ("status", "created"),
+    [(200, []), (404, ["b"]), (403, [])],  # 403: managed elsewhere, leave it
+)
+def test_ensure_bucket_creates_it_only_when_missing(status, created):
+    s3 = BucketS3(status)
+
+    ensure_bucket(s3, "b")
+
+    assert s3.created == created
+
+
+def test_ensure_bucket_reports_other_errors():
+    with pytest.raises(ClientError):
+        ensure_bucket(BucketS3(500), "b")

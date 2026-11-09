@@ -14,8 +14,11 @@ def s3_client(settings: Settings):
         region_name=settings.s3_region,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
-        # RustFS only supports path-style addressing (see ADR 0001)
-        config=Config(s3={"addressing_style": "path"}),
+        # RustFS and Moto only support path-style addressing (see ADR 0001);
+        # on real AWS (no endpoint) boto3 chooses the right style
+        config=Config(
+            s3={"addressing_style": "path" if settings.s3_endpoint_url else "auto"}
+        ),
     )
 
 

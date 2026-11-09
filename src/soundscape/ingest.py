@@ -65,11 +65,18 @@ def sha256_of(path: Path) -> str:
 
 
 def ensure_bucket(s3, bucket: str) -> None:
+    """Create the bucket only if it is really missing."""
     try:
         s3.head_bucket(Bucket=bucket)
-    except ClientError:
-        log.info("Creating bucket %s", bucket)
-        s3.create_bucket(Bucket=bucket)
+    except ClientError as error:
+        status = error.response["ResponseMetadata"]["HTTPStatusCode"]
+        if status == 404:
+            log.info("Creating bucket %s", bucket)
+            s3.create_bucket(Bucket=bucket)
+        elif status != 403:
+            raise
+        # 403: it exists but this key may not inspect it (Terraform manages it).
+        # If the key cannot write there either, the first upload will say so.
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:
