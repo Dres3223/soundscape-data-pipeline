@@ -198,6 +198,22 @@ accepts only the 3 requests that create the `terraform-admin` user; after that
 every request needs valid keys, so IAM permissions really apply. The admin's
 credentials are written to `.env.moto` (git-ignored, owner-only).
 
+To run the pipeline against the emulator, with the pipeline's limited key:
+```bash
+make sync-storage    # optional: copy the local bucket's objects, same paths
+make airflow-cloud   # Airflow's tasks now use the emulator and their own catalog
+# trigger soundscape_pipeline in the Airflow UI
+make airflow-local   # back to RustFS and the main database
+```
+Runs against another S3 use a separate database, `soundscape_cloud`, because
+`raw.recordings` must describe what is in the bucket in use. Return to local
+before stopping the emulator: otherwise the daily DAG would fail.
+
+For a real AWS account the code stays the same; only configuration changes:
+copy the two `infra/terraform/envs/aws.*.example` files without `.example`,
+put the admin keys in `.env.aws`, and add `ENV=aws` to the commands above.
+That path has not been run, since this project has no AWS account yet.
+
 Terraform lives in [`infra/terraform`](infra/terraform): the same code targets
 the emulator or a real account, chosen with `ENV=moto|aws`. The pipeline's key
 is created outside Terraform, so the secret never reaches the state.

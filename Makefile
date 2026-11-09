@@ -14,11 +14,16 @@ TF_VARS := -var-file=envs/$(ENV).tfvars
 # The emulator is disposable; on a real account a person confirms every change
 ifeq ($(ENV),moto)
 TF_AUTO := -auto-approve
+# Inside the Compose network; empty means real AWS
+CLOUD_S3_ENDPOINT := http://moto:5000
 endif
+CLOUD_COMPOSE := CLOUD_ENV=$(ENV) CLOUD_S3_ENDPOINT_URL=$(CLOUD_S3_ENDPOINT) \
+	docker compose -f docker-compose.yml -f docker-compose.cloud.yml
 
 .DEFAULT_GOAL := help
 .PHONY: help setup data up down run test test-dags lint emulator emulator-down \
-	infra-init infra-plan infra-apply infra-check infra-destroy
+	infra-init infra-plan infra-apply infra-check infra-destroy \
+	sync-storage airflow-cloud airflow-local
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) \
@@ -79,3 +84,14 @@ infra-check: ## Check the pipeline's key can do only what it should
 
 infra-destroy: infra-init ## Delete the infrastructure
 	$(TF) destroy $(TF_AUTO) $(TF_VARS)
+
+sync-storage: ## Copy the objects of the local bucket to the ENV bucket, same paths
+	uv run python -m soundscape.sync_storage $(ENV)
+
+airflow-cloud: ## Point Airflow at the ENV bucket, with its own catalog database
+	docker compose exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+		< docker/postgres/create_cloud_db.sql
+	$(CLOUD_COMPOSE) up -d --no-deps --wait airflow-scheduler
+
+airflow-local: ## Point Airflow back at the local bucket and database
+	docker compose up -d --no-deps --wait airflow-scheduler

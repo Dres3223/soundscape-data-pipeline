@@ -1,0 +1,14 @@
+# Points Airflow's tasks at another S3 (the emulator or real AWS), on top of
+# docker-compose.yml. Only the scheduler changes: with LocalExecutor the tasks
+# run there. Usage: make airflow-cloud ENV=moto; back with: make airflow-local
+services:
+  airflow-scheduler:
+    env_file:
+      - .env
+      # Key and bucket of the limited user (make infra-apply writes this file)
+      - .env.pipeline.${CLOUD_ENV:?run through make airflow-cloud}
+    environment:
+      # Empty means real AWS (see soundscape.config)
+      S3_ENDPOINT_URL: ${CLOUD_S3_ENDPOINT_URL-}
+      # Its own catalog: raw.recordings must describe what is in this bucket
+      POSTGRES_DB: soundscape_cloud
