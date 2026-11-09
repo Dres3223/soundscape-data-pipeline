@@ -24,10 +24,15 @@ change during the year and the periods can use fixed local hours
 
 | Period | Local hours | Why |
 |---|---|---|
-| `dawn` | 05:00–07:59 | Dawn chorus: the most active time for birds |
+| `dawn` | 05:00–07:59 | Around sunrise |
 | `day` | 08:00–16:59 | |
-| `dusk` | 17:00–18:59 | Dusk chorus |
-| `night` | 19:00–04:59 | Insects and amphibians |
+| `dusk` | 17:00–18:59 | Around sunset |
+| `night` | 19:00–04:59 | |
+
+These periods are a working choice, not a result: they have not been checked
+against the data. Hours assume the file names use Colombian local time (UTC-5),
+which is also unverified. Levels (dBFS) are not calibrated, so compare them
+within a site, not between sites. Nothing here identifies species or sources.
 
 ## Usage
 

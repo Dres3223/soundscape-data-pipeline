@@ -34,7 +34,12 @@ st.set_page_config(page_title="El Silencio soundscape", layout="wide")
 st.title("El Silencio soundscape")
 st.caption(
     "Field recordings from El Silencio Nature Reserve (Colombia), summarised by "
-    "site and period of the day (local time). Data: BirdCLEF+ 2025."
+    "site and period of the day (assumed local time, UTC-5). Data: BirdCLEF+ 2025."
+)
+st.info(
+    "Exploratory view of acoustic measurements. Levels are not calibrated, so "
+    "compare them within a site, not between sites. These numbers do not say "
+    "which species or source produced the sound."
 )
 
 try:
@@ -62,8 +67,8 @@ period_axis = alt.X(
     "period:N", sort=PERIODS, title="Period of the day", axis=alt.Axis(labelAngle=0)
 )
 
-# 1. Loudness of every site and period at a glance
-st.subheader("Loudness by site and period")
+# 1. Each period against its own site: absolute levels depend on the recorder
+st.subheader("Level of each period relative to its site's average")
 st.altair_chart(
     alt.Chart(data)
     .mark_rect()
@@ -71,11 +76,16 @@ st.altair_chart(
         period_axis,
         # labelOverlap=False: show every site name, never hide one
         alt.Y("site_code:N", title="Site", axis=alt.Axis(labelOverlap=False)),
-        alt.Color("avg_rms_dbfs:Q", title="dBFS", scale=alt.Scale(scheme="viridis")),
+        alt.Color(
+            "rms_dbfs_vs_site_avg:Q",
+            title="dB vs site",
+            scale=alt.Scale(scheme="redblue", reverse=True, domainMid=0),
+        ),
         tooltip=[
             "site_code",
             "period",
             "n_recordings",
+            alt.Tooltip("rms_dbfs_vs_site_avg:Q", format=".1f", title="dB vs site"),
             alt.Tooltip("avg_rms_dbfs:Q", format=".1f", title="avg dBFS"),
             alt.Tooltip("loudness_rank_in_site:Q", title="rank in site"),
         ],
@@ -140,7 +150,7 @@ with right:
 
 # 3. How high-pitched the soundscape is at each moment
 st.subheader("Spectral centroid by period")
-st.caption("Higher centroid = brighter, higher-pitched sound (insects, many birds).")
+st.caption("Higher centroid = more of the energy at high frequencies.")
 st.altair_chart(
     alt.Chart(data)
     .mark_line(point=True)

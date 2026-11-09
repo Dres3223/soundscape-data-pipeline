@@ -30,7 +30,7 @@ models:
               arguments:
                 min_value: 1
       - name: avg_rms_dbfs
-        description: Mean loudness in dBFS.
+        description: Mean level in dBFS; not calibrated, so compare within a site only.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:

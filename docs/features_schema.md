@@ -26,13 +26,13 @@ s3://soundscape/
 | `sha256` | string | | Content hash of the audio file; links to `raw.recordings` |
 | `file_name` | string | | Original file name |
 | `site_code` | string | | Recording site, e.g. `H02` |
-| `recorded_at` | timestamp (ms) | local time | Start of the recording, from the file name |
+| `recorded_at` | timestamp (ms) | assumed local time (UTC-5) | Start of the recording, from the file name |
 | `duration_s` | float32 | seconds | Length of the decoded audio |
 | `mfcc_mean` | list\<float32\> | dimensionless | Mean of each MFCC over time; `n_mfcc` values |
 | `mfcc_std` | list\<float32\> | dimensionless | Standard deviation of each MFCC over time; `n_mfcc` values |
 | `spectral_centroid_hz` | float32 | Hz | Mean spectral centroid: where the energy is centred (higher = brighter sound) |
 | `spectral_bandwidth_hz` | float32 | Hz | Mean spread of the energy around the centroid |
-| `rms_mean` | float32 | amplitude (0–1) | Mean RMS energy: how loud the recording is |
+| `rms_mean` | float32 | amplitude (0–1) | Mean RMS energy of the digital signal; not calibrated, so compare within a site only |
 | `zcr_mean` | float32 | fraction (0–1) | Mean zero-crossing rate: share of samples where the signal changes sign |
 | `sample_rate_hz` | int32 | Hz | Sample rate used for extraction (`FEATURES_SAMPLE_RATE`) |
 | `n_mfcc` | int16 | count | Number of MFCC computed (`FEATURES_N_MFCC`) |

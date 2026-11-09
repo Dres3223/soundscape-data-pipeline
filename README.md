@@ -60,6 +60,19 @@ Solid lines and boxes are built; dashed ones are planned.
 | Dashboard | ✅ Built | Streamlit app over the mart: loudness by site and period, one site through the day |
 | Airflow | ✅ Built | Runs ingest → features → load daily, with retries; re-running a date duplicates nothing |
 
+## What these results can and cannot say
+
+So far this pipeline computes generic acoustic measurements on a subset of the
+data. Treat them as exploration:
+
+- **It does not identify species or sound sources.** A higher level or centroid
+  at some hour may come from animals, rain, wind or the equipment.
+- **Levels are not calibrated.** Compare them within a site, not between sites.
+- **Time and periods are assumptions.** Hours assume the file names use local
+  time (UTC-5), and the periods of the day are a working choice.
+- **The coverage is limited.** The full dataset is 162 hours from 38 days of a
+  single season (April to May 2023).
+
 ## How to run
 
 ### 1. Prerequisites

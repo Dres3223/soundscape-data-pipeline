@@ -3,7 +3,8 @@ version: 2
 seeds:
   - name: day_periods
     description: >
-      Ecological period of each hour of the day, in local time (UTC-5).
+      Period of each hour of the day, a working choice around sunrise and sunset,
+      in assumed local time (UTC-5).
       El Silencio is at 6.76° N, so sunrise (~05:45) and sunset (~18:00)
       barely change during the year and fixed hours work all year round.
     config:
@@ -22,7 +23,7 @@ seeds:
                 min_value: 0
                 max_value: 23
       - name: period
-        description: "dawn (05–07, dawn chorus), day (08–16), dusk (17–18, dusk chorus) or night (19–04)."
+        description: "dawn (05–07), day (08–16), dusk (17–18) or night (19–04)."
         data_tests:
           - not_null
           - accepted_values:

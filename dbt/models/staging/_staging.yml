@@ -13,7 +13,7 @@ models:
         description: Recording site, e.g. H02 or O203.
         data_tests: [not_null]
       - name: recorded_at_local
-        description: Start of the recording in Colombian local time (UTC-5), from the file name.
+        description: Start of the recording from the file name, assumed to be Colombian local time (UTC-5).
         data_tests: [not_null]
       - name: recorded_date
         description: Local date of the recording.
@@ -62,7 +62,7 @@ models:
         description: Recording site, e.g. H02 or O203.
         data_tests: [not_null]
       - name: recorded_at_local
-        description: Start of the recording in Colombian local time (UTC-5).
+        description: Start of the recording, assumed to be Colombian local time (UTC-5).
       - name: recorded_date
         description: Local date of the recording.
       - name: recorded_hour
@@ -91,7 +91,7 @@ models:
       - name: rms
         description: Mean RMS energy, amplitude from 0 to 1.
       - name: rms_dbfs
-        description: Mean loudness in decibels relative to full scale (dBFS); 0 is the loudest possible.
+        description: Mean level in decibels relative to digital full scale (dBFS); not calibrated, so compare within a site only.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
