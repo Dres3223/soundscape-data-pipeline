@@ -22,7 +22,7 @@ CLOUD_COMPOSE := CLOUD_ENV=$(ENV) CLOUD_S3_ENDPOINT_URL=$(CLOUD_S3_ENDPOINT) \
 
 .DEFAULT_GOAL := help
 .PHONY: help setup data up down run test test-dags lint emulator emulator-down \
-	infra-init infra-plan infra-apply infra-check infra-destroy \
+	infra-init infra-plan infra-apply infra-check infra-destroy infra-test infra-cycle \
 	sync-storage airflow-cloud airflow-local
 
 help: ## List the available commands
@@ -82,8 +82,26 @@ infra-apply: infra-init ## Create the infrastructure and the pipeline's key
 infra-check: ## Check the pipeline's key can do only what it should
 	$(AWS_ENV) python scripts/check_pipeline_permissions.py $(ENV)
 
-infra-destroy: infra-init ## Delete the infrastructure
+infra-destroy: infra-init ## Delete the infrastructure and the pipeline's key
+	$(AWS_ENV) python scripts/create_pipeline_key.py $(ENV) --delete
 	$(TF) destroy $(TF_AUTO) $(TF_VARS)
+	rm -f .env.pipeline.$(ENV)
+
+# Its own data folder: .terraform remembers the emulator's backend, which would
+# ask for credentials this target must not need
+infra-test: ## Check the configuration for real AWS, without an account
+	TF_DATA_DIR=.terraform/test terraform -chdir=infra/terraform init -backend=false -input=false
+	TF_DATA_DIR=.terraform/test terraform -chdir=infra/terraform test -var-file=envs/aws.tfvars.example
+
+infra-cycle: ## Create, destroy with data inside and recreate (emulator only)
+	@test "$(ENV)" = moto || (echo "infra-cycle only runs on the emulator" && exit 1)
+	$(MAKE) infra-apply
+	$(MAKE) infra-check
+	$(AWS_ENV) python scripts/check_infra.py $(ENV) present
+	$(MAKE) infra-destroy
+	$(AWS_ENV) python scripts/check_infra.py $(ENV) absent
+	$(MAKE) infra-apply
+	$(MAKE) infra-check
 
 sync-storage: ## Copy the objects of the local bucket to the ENV bucket, same paths
 	uv run python -m soundscape.sync_storage $(ENV)

@@ -118,12 +118,13 @@ jobs:
         run: |
           terraform -chdir=infra/terraform init -backend=false
           terraform -chdir=infra/terraform validate
-      - name: Apply to the emulator and check the pipeline's permissions
+      - name: Check the configuration for real AWS, without an account
+        run: make infra-test
+      - name: Create, destroy with data inside and recreate on the emulator
         run: |
           bash scripts/make_env.sh
           make emulator
-          make infra-apply
-          make infra-check
+          make infra-cycle
 
   # Continuous delivery: only pushes to main, and only once every check passed
   publish:

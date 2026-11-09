@@ -23,12 +23,11 @@ resource "aws_s3_bucket_public_access_block" "data" {
   restrict_public_buckets = true
 }
 
-# Identity of the pipeline. Its access key is created outside Terraform
-# (scripts/create_pipeline_key.py) so the secret never reaches the state;
-# force_destroy lets Terraform delete the user even though that key exists.
+# Identity of the pipeline. Its access key is created and deleted outside
+# Terraform (scripts/create_pipeline_key.py), so the secret never reaches the
+# state; `make infra-destroy` deletes the key first, as AWS requires.
 resource "aws_iam_user" "pipeline" {
-  name          = var.pipeline_user_name
-  force_destroy = true
+  name = var.pipeline_user_name
 }
 
 # Least privilege: list, read and write this bucket only. No s3:DeleteObject:

@@ -15,6 +15,17 @@ in `envs/` change.
 make emulator       # fresh emulator and its admin user
 make infra-apply    # state bucket, terraform init and apply, pipeline key
 make infra-check    # the pipeline's key can do only what it should
+make infra-cycle    # create, destroy with data inside and recreate (emulator only)
+make infra-test     # check the settings for real AWS; needs no account
 ```
 Add `ENV=aws` for a real account, with credentials in `.env.aws` and the
 example files copied. Applying to AWS always asks for confirmation.
+
+`make infra-destroy` deletes the pipeline's key and then everything Terraform
+created. The bucket that holds the state is not managed by Terraform and stays,
+so the state's history survives: it disappears with `make emulator-down`, and on
+a real account it has to be emptied and deleted by hand if you close everything.
+
+`tests/aws.tftest.hcl` runs against a mocked provider. It proves what the code
+asks AWS for (no emulator endpoint, protected bucket, least-privilege policy),
+not that AWS accepts it.

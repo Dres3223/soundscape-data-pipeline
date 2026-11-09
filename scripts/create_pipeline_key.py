@@ -1,11 +1,13 @@
-"""Give the pipeline's IAM user a new access key and save it locally.
+"""Give the pipeline's IAM user a new access key, or delete its keys.
 
 Done here and not in Terraform so that the secret never reaches the state.
-Replaces any previous key. Writes .env.pipeline.<env> (git-ignored,
-owner-only) with the settings the pipeline needs to use that bucket.
+A new key replaces any previous one and is saved in .env.pipeline.<env>
+(git-ignored, owner-only) with the settings the pipeline needs. Keys must be
+deleted before Terraform can delete the user.
 
-Usage (`make infra-apply` runs it):
+Usage (`make infra-apply` and `make infra-destroy` run it):
     python scripts/create_pipeline_key.py moto
+    python scripts/create_pipeline_key.py moto --delete
 """
 
 import json
@@ -25,12 +27,18 @@ def terraform_outputs() -> dict[str, str]:
 def main() -> None:
     env = sys.argv[1]
     outputs = terraform_outputs()
+    if "pipeline_user_name" not in outputs:
+        return  # nothing has been created yet
     user = outputs["pipeline_user_name"]
     region = os.environ.get("AWS_REGION", "us-east-1")
 
     iam = boto3.client("iam", region_name=region)
     for old in iam.list_access_keys(UserName=user)["AccessKeyMetadata"]:
         iam.delete_access_key(UserName=user, AccessKeyId=old["AccessKeyId"])
+    if "--delete" in sys.argv:
+        print(f">> Deleted the access keys of {user}")
+        return
+
     key = iam.create_access_key(UserName=user)["AccessKey"]
 
     path = f".env.pipeline.{env}"

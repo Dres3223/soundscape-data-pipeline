@@ -191,6 +191,7 @@ account and no cost. This project has not been deployed to a real AWS account.
 make emulator        # start a fresh Moto on localhost:5001 and create its admin user
 make infra-apply     # create the bucket, the pipeline's user and its key with Terraform
 make infra-check     # confirm that key can do only what it should
+make infra-cycle     # create, destroy with data inside and recreate
 make emulator-down   # stop it and erase everything in it
 ```
 Moto keeps everything in memory, so each `make emulator` starts from zero. It
