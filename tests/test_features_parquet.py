@@ -6,8 +6,10 @@ import pyarrow.parquet as pq
 from soundscape.features import (
     FAILED_SCHEMA,
     FEATURES_SCHEMA,
+    FEATURES_VERSION,
     FeatureResult,
     build_tables,
+    is_up_to_date,
     partition_key,
 )
 
@@ -91,3 +93,34 @@ def test_tables_round_trip_through_parquet():
     assert row["sample_rate_hz"] == 32000
     assert row["n_mfcc"] == 20
     assert row["extracted_at"] == EXTRACTED_AT
+
+
+def stored_row(site: str, recorded_at: datetime) -> dict:
+    results = [(recording(site, recorded_at), ok())]
+    tables, _ = build_tables(results, 32000, 20, EXTRACTED_AT)
+    (table,) = tables.values()
+    return table.to_pylist()[0]
+
+
+def test_is_up_to_date_compares_settings_and_version():
+    row = {"sample_rate_hz": 32000, "n_mfcc": 20, "features_version": FEATURES_VERSION}
+
+    assert is_up_to_date(row, 32000, 20)
+    assert not is_up_to_date(None, 32000, 20)
+    assert not is_up_to_date(row, 16000, 20)
+    assert not is_up_to_date(row, 32000, 13)
+    assert not is_up_to_date({**row, "features_version": 0}, 32000, 20)
+
+
+def test_kept_rows_only_fill_partitions_with_new_results():
+    april = stored_row("H02", datetime(2023, 4, 1))
+    may = stored_row("H02", datetime(2023, 5, 1))
+    new = [(recording("H02", datetime(2023, 4, 2)), ok())]
+    later = datetime(2026, 11, 9, tzinfo=UTC)
+
+    tables, _ = build_tables(new, 32000, 20, later, kept_rows=[april, may])
+
+    assert list(tables) == ["features/site=H02/month=2023-04/features.parquet"]
+    rows = tables["features/site=H02/month=2023-04/features.parquet"].to_pylist()
+    # Sorted by time; the kept row keeps its original extraction date
+    assert [row["extracted_at"] for row in rows] == [EXTRACTED_AT, later]

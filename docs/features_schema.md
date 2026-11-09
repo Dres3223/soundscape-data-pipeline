@@ -15,7 +15,8 @@ s3://soundscape/
   query engines skip partitions they do not need. On the full dataset this
   gives ~112 partitions of ~87 rows; partitioning by day would create
   ~1,680 near-empty files.
-- Each run rewrites these files whole, so re-running gives the same result.
+- Runs are incremental: only recordings without up-to-date features are analyzed,
+  and only their partitions are rewritten, keeping the rows already there.
 - `site` and `month` are not stored inside the files: readers recover them
   from the path (`hive_partitioning = true` in DuckDB).
 
@@ -36,7 +37,8 @@ s3://soundscape/
 | `zcr_mean` | float32 | fraction (0–1) | Mean zero-crossing rate: share of samples where the signal changes sign |
 | `sample_rate_hz` | int32 | Hz | Sample rate used for extraction (`FEATURES_SAMPLE_RATE`) |
 | `n_mfcc` | int16 | count | Number of MFCC computed (`FEATURES_N_MFCC`) |
-| `extracted_at` | timestamp (µs, UTC) | | When the run that produced the row started |
+| `features_version` | int16 | | Version of the calculation; raised in the code when it changes, so every recording is redone |
+| `extracted_at` | timestamp (µs, UTC) | | When the run that computed the row started; kept while the row stays up to date |
 
 Frame-level features (MFCC, centroid, bandwidth, RMS, zero-crossing rate)
 use librosa's defaults: 2,048-sample frames with a 512-sample hop

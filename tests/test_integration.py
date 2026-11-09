@@ -149,7 +149,8 @@ def test_load_is_idempotent_and_updates_re_extracted_features(settings):
 
     first = load.run(settings)
     second = load.run(settings)
-    features.run(settings)  # re-extract: newer extracted_at
+    # Other settings force a re-extraction, with a newer extracted_at
+    features.run(settings.model_copy(update={"features_n_mfcc": 13}))
     third = load.run(settings)
 
     assert first == {"read": 2, "inserted": 2, "updated": 0, "unchanged": 0}
@@ -192,3 +193,43 @@ def test_load_is_atomic_and_rejects_features_of_unknown_recordings(settings):
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         load.run(settings)
     assert feature_rows(settings) == {}  # the valid rows were not loaded either
+
+
+def test_features_do_nothing_when_up_to_date(settings):
+    ingest.run(settings)
+    features.run(settings)
+    load.run(settings)
+
+    assert features.run(settings) == []
+    assert load.run(settings) == {
+        "read": 2,
+        "inserted": 0,
+        "updated": 0,
+        "unchanged": 2,
+    }
+
+
+def test_features_redo_everything_when_settings_or_code_change(settings, monkeypatch):
+    ingest.run(settings)
+    features.run(settings)
+
+    changed = settings.model_copy(update={"features_n_mfcc": 13})
+    assert len(features.run(changed)) == 2
+
+    monkeypatch.setattr(features, "FEATURES_VERSION", features.FEATURES_VERSION + 1)
+    assert len(features.run(changed)) == 2
+
+
+def test_features_new_recording_keeps_the_rows_of_its_partition(settings):
+    ingest.run(settings)
+    features.run(settings)
+
+    # Same site and month as the first file
+    write_tone(settings.ingest_source_dir / "T01_20230423_060000.ogg", 2000)
+    ingest.run(settings)
+    results = features.run(settings)
+
+    assert len(results) == 1
+    key = "features/site=T01/month=2023-04/features.parquet"
+    body = s3_client(settings).get_object(Bucket=TEST_BUCKET, Key=key)["Body"]
+    assert pq.read_table(io.BytesIO(body.read())).num_rows == 2

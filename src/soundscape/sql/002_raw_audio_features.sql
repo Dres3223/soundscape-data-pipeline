@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS raw.audio_features (
     zcr_mean               real         NOT NULL,
     sample_rate_hz         integer      NOT NULL,
     n_mfcc                 smallint     NOT NULL,
+    features_version       smallint     NOT NULL,  -- version of the calculation
     extracted_at           timestamptz  NOT NULL,  -- when the features were computed
     loaded_at              timestamptz  NOT NULL DEFAULT now()  -- when this row was last written
 );
@@ -24,3 +25,8 @@ CREATE TABLE IF NOT EXISTS raw.audio_features (
 -- Queries filter by site and by time range (period of day, month...)
 CREATE INDEX IF NOT EXISTS audio_features_site_recorded_at_idx
     ON raw.audio_features (site_code, recorded_at);
+
+-- Tables created before this column existed; those rows are version 1
+ALTER TABLE raw.audio_features
+    ADD COLUMN IF NOT EXISTS features_version smallint NOT NULL DEFAULT 1;
+ALTER TABLE raw.audio_features ALTER COLUMN features_version DROP DEFAULT;

@@ -11,12 +11,15 @@ file is reported as failed instead of stopping the batch.
 Results are written to S3 as Parquet (schema: docs/features_schema.md):
     features/site=<site>/month=<YYYY-MM>/features.parquet
     features_failed/failed.parquet
-Each run rewrites those files whole, so re-running gives the same result.
+The run is incremental: only recordings without up-to-date features are
+analyzed, and only the partitions they belong to are rewritten, keeping the
+rows already there. Re-running with nothing new does no work.
 """
 
 import io
 import logging
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -32,6 +35,9 @@ from soundscape.config import Settings
 from soundscape.storage import pg_connect, s3_client
 
 log = logging.getLogger("soundscape.features")
+
+# Raise it whenever the calculation changes: every recording is then redone
+FEATURES_VERSION = 1
 
 # Fixed schema: n_mfcc changes the length of the lists, not the columns
 FEATURES_SCHEMA = pa.schema(
@@ -50,6 +56,7 @@ FEATURES_SCHEMA = pa.schema(
         ("zcr_mean", pa.float32()),
         ("sample_rate_hz", pa.int32()),
         ("n_mfcc", pa.int16()),
+        ("features_version", pa.int16()),
         ("extracted_at", pa.timestamp("us", tz="UTC")),
     ]
 )
@@ -113,13 +120,43 @@ def partition_key(site_code: str, recorded_at: datetime) -> str:
     return f"features/site={site_code}/month={recorded_at:%Y-%m}/features.parquet"
 
 
+def is_up_to_date(row: dict | None, sample_rate: int, n_mfcc: int) -> bool:
+    """Whether stored features were computed with the current settings and code."""
+    return (
+        row is not None
+        and row["sample_rate_hz"] == sample_rate
+        and row["n_mfcc"] == n_mfcc
+        and row["features_version"] == FEATURES_VERSION
+    )
+
+
+def read_existing_rows(s3, bucket: str) -> dict[str, dict]:
+    """Stored features by recording; files with an older schema count as absent."""
+    rows = {}
+    pages = s3.get_paginator("list_objects_v2").paginate(
+        Bucket=bucket, Prefix="features/"
+    )
+    for page in pages:
+        for obj in page.get("Contents", []):
+            body = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()
+            table = pq.read_table(io.BytesIO(body))
+            if table.schema.equals(FEATURES_SCHEMA, check_metadata=False):
+                rows.update({row["sha256"]: row for row in table.to_pylist()})
+    return rows
+
+
 def build_tables(
     results: list[tuple[dict, FeatureResult]],
     sample_rate: int,
     n_mfcc: int,
     extracted_at: datetime,
+    kept_rows: Iterable[dict] = (),
 ) -> tuple[dict[str, pa.Table], pa.Table]:
-    """Group results into one table per partition, plus a table of failures."""
+    """Group results into one table per partition, plus a table of failures.
+
+    Only partitions with a new result are returned; kept_rows fills those
+    partitions with the rows that did not need recomputing.
+    """
     partitions = defaultdict(list)
     failed = []
     for recording, result in results:
@@ -132,6 +169,7 @@ def build_tables(
                 **result.features,
                 "sample_rate_hz": sample_rate,
                 "n_mfcc": n_mfcc,
+                "features_version": FEATURES_VERSION,
                 "extracted_at": extracted_at,
             }
             key = partition_key(recording["site_code"], recording["recorded_at"])
@@ -147,8 +185,16 @@ def build_tables(
                 }
             )
 
+    for row in kept_rows:
+        key = partition_key(row["site_code"], row["recorded_at"])
+        if key in partitions:
+            partitions[key].append(row)
+
     tables = {
-        key: pa.Table.from_pylist(rows, schema=FEATURES_SCHEMA)
+        key: pa.Table.from_pylist(
+            sorted(rows, key=lambda row: (row["recorded_at"], row["file_name"])),
+            schema=FEATURES_SCHEMA,
+        )
         for key, rows in partitions.items()
     }
     return tables, pa.Table.from_pylist(failed, schema=FAILED_SCHEMA)
@@ -161,7 +207,7 @@ def put_parquet(s3, bucket: str, key: str, table: pa.Table) -> None:
 
 
 def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
-    """Analyze every registered recording and write the results to S3."""
+    """Analyze the recordings without up-to-date features; write them to S3."""
     s3 = s3_client(settings)
 
     # raw.recordings is the catalog: only ingested files are processed (lineage)
@@ -174,14 +220,22 @@ def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
             """
         ).fetchall()
 
-    results = []
+    sample_rate = settings.features_sample_rate
+    n_mfcc = settings.features_n_mfcc
+    existing = read_existing_rows(s3, settings.s3_bucket)
+    pending, kept_rows = [], []
     for recording in recordings:
+        row = existing.get(recording["sha256"])
+        if is_up_to_date(row, sample_rate, n_mfcc):
+            kept_rows.append(row)
+        else:
+            pending.append(recording)
+    log.info("Up to date: %d; to analyze: %d", len(kept_rows), len(pending))
+
+    results = []
+    for recording in pending:
         body = s3.get_object(Bucket=settings.s3_bucket, Key=recording["s3_key"])
-        result = analyze(
-            body["Body"].read(),
-            settings.features_sample_rate,
-            settings.features_n_mfcc,
-        )
+        result = analyze(body["Body"].read(), sample_rate, n_mfcc)
         if result.status == "ok":
             log.info("Extracted %s", recording["file_name"])
         else:
@@ -190,9 +244,10 @@ def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
 
     tables, failed = build_tables(
         results,
-        settings.features_sample_rate,
-        settings.features_n_mfcc,
+        sample_rate,
+        n_mfcc,
         extracted_at=datetime.now(UTC),
+        kept_rows=kept_rows,
     )
     for key, table in tables.items():
         put_parquet(s3, settings.s3_bucket, key, table)
