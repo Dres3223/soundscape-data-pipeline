@@ -7,11 +7,11 @@ DBT := uv run $(ENV_FILE) --group dbt dbt
 DBT_ARGS := --project-dir dbt --profiles-dir dbt
 
 .DEFAULT_GOAL := help
-.PHONY: help setup data up down run test test-dags lint
+.PHONY: help setup data up down run test test-dags lint emulator emulator-down
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) \
-		| awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
+		| awk -F':.*## ' '{printf "  make %-14s %s\n", $$1, $$2}'
 
 setup: ## Install dependencies and git hooks; create .env with random secrets
 	uv sync
@@ -27,7 +27,7 @@ up: ## Build the images and start every service, waiting until they are healthy
 	docker compose up -d --build --wait
 
 down: ## Stop the services (data is kept in the Docker volumes)
-	docker compose down
+	docker compose --profile emulator down
 
 run: ## Run the pipeline once: ingest, features, load, then dbt build
 	uv run python -m soundscape.ingest
@@ -44,3 +44,10 @@ test-dags: ## Check the Airflow DAGs load (installs Airflow in .venv)
 
 lint: ## Run every pre-commit hook on the whole repository
 	uv run pre-commit run --all-files
+
+emulator: ## Start a fresh AWS emulator (Moto) and create its admin user
+	docker compose --profile emulator up -d --build --wait --force-recreate moto
+	uv run $(ENV_FILE) python scripts/bootstrap_emulator.py
+
+emulator-down: ## Stop the AWS emulator and erase everything in it
+	docker compose --profile emulator rm --stop --force moto

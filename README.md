@@ -181,6 +181,21 @@ uv run pytest -m "not integration"   # only the fast tests (no services needed)
 uv run --group airflow pytest tests/test_dags.py   # DAGs load (installs Airflow)
 ```
 
+## AWS emulator
+
+The infrastructure is defined for AWS but validated locally against
+[Moto](https://github.com/getmoto/moto), an emulator of the AWS APIs: no AWS
+account and no cost. This project has not been deployed to a real AWS account.
+
+```bash
+make emulator        # start a fresh Moto on localhost:5001 and create its admin user
+make emulator-down   # stop it and erase everything in it
+```
+Moto keeps everything in memory, so each `make emulator` starts from zero. It
+accepts only the 3 requests that create the `terraform-admin` user; after that
+every request needs valid keys, so IAM permissions really apply. The admin's
+credentials are written to `.env.moto` (git-ignored, owner-only).
+
 ## Container image
 
 Every push to `main` that passes CI publishes the pipeline as an image on

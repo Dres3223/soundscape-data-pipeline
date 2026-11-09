@@ -191,6 +191,28 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # AWS emulator (S3, IAM...), only with `make emulator`. Keeps everything in
+  # memory, so it never restarts on its own: that would silently erase it
+  moto:
+    profiles: ["emulator"]
+    build:
+      context: docker/moto
+    image: soundscape-moto:5.2.5
+    environment:
+      # The first 3 requests need no credentials: exactly what it takes to
+      # create the admin user (scripts/bootstrap_emulator.py). Then IAM applies
+      INITIAL_NO_AUTH_ACTION_COUNT: "3"
+    ports:
+      # Not 5000 on the host: macOS uses it for AirPlay
+      - "127.0.0.1:${MOTO_PORT:-5001}:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/moto-api/')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: "no"
+
 volumes:
   pgdata:
   s3data:
