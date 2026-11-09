@@ -189,12 +189,18 @@ account and no cost. This project has not been deployed to a real AWS account.
 
 ```bash
 make emulator        # start a fresh Moto on localhost:5001 and create its admin user
+make infra-apply     # create the bucket, the pipeline's user and its key with Terraform
+make infra-check     # confirm that key can do only what it should
 make emulator-down   # stop it and erase everything in it
 ```
 Moto keeps everything in memory, so each `make emulator` starts from zero. It
 accepts only the 3 requests that create the `terraform-admin` user; after that
 every request needs valid keys, so IAM permissions really apply. The admin's
 credentials are written to `.env.moto` (git-ignored, owner-only).
+
+Terraform lives in [`infra/terraform`](infra/terraform): the same code targets
+the emulator or a real account, chosen with `ENV=moto|aws`. The pipeline's key
+is created outside Terraform, so the secret never reaches the state.
 
 ## Container image
 

@@ -1,0 +1,4 @@
+# Real AWS: copy to aws.tfvars (git-ignored) and choose a globally unique name.
+# aws_endpoint_url stays unset and force_destroy false: Terraform then refuses
+# to delete a bucket that still holds data.
+bucket_name = "soundscape-CHANGE-ME"

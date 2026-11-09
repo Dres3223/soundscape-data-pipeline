@@ -43,6 +43,8 @@ dbt/logs/
 *.tfstate
 *.tfstate.*
 *.tfvars
+# The emulator's settings hold no secrets
+!infra/terraform/envs/moto.tfvars
 
 # Editors
 .vscode/

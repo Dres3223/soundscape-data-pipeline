@@ -6,8 +6,19 @@ ENV_FILE := $(if $(wildcard .env),--env-file .env)
 DBT := uv run $(ENV_FILE) --group dbt dbt
 DBT_ARGS := --project-dir dbt --profiles-dir dbt
 
+# Infrastructure: ENV=moto (local emulator) or ENV=aws (real account)
+ENV ?= moto
+AWS_ENV := uv run --env-file .env.$(ENV)
+TF := $(AWS_ENV) terraform -chdir=infra/terraform
+TF_VARS := -var-file=envs/$(ENV).tfvars
+# The emulator is disposable; on a real account a person confirms every change
+ifeq ($(ENV),moto)
+TF_AUTO := -auto-approve
+endif
+
 .DEFAULT_GOAL := help
-.PHONY: help setup data up down run test test-dags lint emulator emulator-down
+.PHONY: help setup data up down run test test-dags lint emulator emulator-down \
+	infra-init infra-plan infra-apply infra-check infra-destroy
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) \
@@ -51,3 +62,20 @@ emulator: ## Start a fresh AWS emulator (Moto) and create its admin user
 
 emulator-down: ## Stop the AWS emulator and erase everything in it
 	docker compose --profile emulator rm --stop --force moto
+
+infra-init: ## Create the state bucket and initialize Terraform (ENV=moto|aws)
+	$(AWS_ENV) python scripts/bootstrap_state.py infra/terraform/envs/$(ENV).backend.hcl
+	$(TF) init -reconfigure -input=false -backend-config=envs/$(ENV).backend.hcl
+
+infra-plan: infra-init ## Show what Terraform would change
+	$(TF) plan $(TF_VARS)
+
+infra-apply: infra-init ## Create the infrastructure and the pipeline's key
+	$(TF) apply $(TF_AUTO) $(TF_VARS)
+	$(AWS_ENV) python scripts/create_pipeline_key.py $(ENV)
+
+infra-check: ## Check the pipeline's key can do only what it should
+	$(AWS_ENV) python scripts/check_pipeline_permissions.py $(ENV)
+
+infra-destroy: infra-init ## Delete the infrastructure
+	$(TF) destroy $(TF_AUTO) $(TF_VARS)

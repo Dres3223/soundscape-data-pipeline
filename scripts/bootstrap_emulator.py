@@ -55,6 +55,7 @@ def main() -> None:
         file.write(f"AWS_ACCESS_KEY_ID={key['AccessKeyId']}\n")
         file.write(f"AWS_SECRET_ACCESS_KEY={key['SecretAccessKey']}\n")
         file.write("AWS_REGION=us-east-1\n")
+        file.write(f"AWS_ENDPOINT_URL={endpoint}\n")
     print(f">> Admin user {ADMIN_USER} created; credentials in {ENV_FILE}")
 
 

@@ -1,0 +1,6 @@
+# Real AWS: copy to aws.backend.hcl and choose a globally unique name.
+bucket       = "soundscape-tfstate-CHANGE-ME"
+key          = "soundscape/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true
