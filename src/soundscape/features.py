@@ -5,8 +5,10 @@ Usage:
 
 Each recording is read from S3 into memory and summarised as one row of
 numbers: MFCC (mean and std per coefficient), spectral centroid and
-bandwidth, RMS energy, zero-crossing rate and duration. A damaged or empty
-file is reported as failed instead of stopping the batch.
+bandwidth, RMS energy, zero-crossing rate, duration, and standard
+ecoacoustic indices from scikit-maad (ACI, ADI, AEI, BI, NDSI, entropies,
+background noise and signal-to-noise ratio). A damaged or empty file is
+reported as failed instead of stopping the batch.
 
 Results are written to S3 as Parquet (schema: docs/features_schema.md):
     features/site=<site>/month=<YYYY-MM>/features.parquet
@@ -18,6 +20,7 @@ rows already there. Re-running with nothing new does no work.
 
 import io
 import logging
+import warnings
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -28,6 +31,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import soundfile as sf
+from maad import features as maad_features
+from maad import sound as maad_sound
 from psycopg.rows import dict_row
 from pydantic import ValidationError
 
@@ -37,7 +42,22 @@ from soundscape.storage import pg_connect, s3_client
 log = logging.getLogger("soundscape.features")
 
 # Raise it whenever the calculation changes: every recording is then redone
-FEATURES_VERSION = 1
+FEATURES_VERSION = 2  # 2: ecoacoustic indices
+
+# Ecoacoustic indices: scikit-maad defaults, with a fixed spectrogram and the
+# high band capped at 16 kHz, half the sample rate (docs/features_schema.md)
+SPECTROGRAM = {"mode": "amplitude", "nperseg": 1024, "noverlap": 512}
+BANDS_HZ = {"flim_low": [0, 1000], "flim_mid": [1000, 10000], "flim_hi": [10000, 16000]}
+# Our column name -> scikit-maad's
+TEMPORAL_INDICES = {"ht": "Ht", "bgnt_db": "BGNt", "snrt_db": "SNRt"}
+SPECTRAL_INDICES = {
+    "aci": "ACI",
+    "adi": "ADI",
+    "aei": "AEI",
+    "bi": "BI",
+    "ndsi": "NDSI",
+    "hf": "Hf",
+}
 
 # Fixed schema: n_mfcc changes the length of the lists, not the columns
 FEATURES_SCHEMA = pa.schema(
@@ -54,6 +74,16 @@ FEATURES_SCHEMA = pa.schema(
         ("spectral_bandwidth_hz", pa.float32()),
         ("rms_mean", pa.float32()),
         ("zcr_mean", pa.float32()),
+        # Ecoacoustic indices; null when they cannot be computed (pure silence)
+        ("aci", pa.float32()),
+        ("adi", pa.float32()),
+        ("aei", pa.float32()),
+        ("bi", pa.float32()),
+        ("ndsi", pa.float32()),
+        ("ht", pa.float32()),
+        ("hf", pa.float32()),
+        ("bgnt_db", pa.float32()),
+        ("snrt_db", pa.float32()),
         ("sample_rate_hz", pa.int32()),
         ("n_mfcc", pa.int16()),
         ("features_version", pa.int16()),
@@ -83,6 +113,34 @@ class FeatureResult:
     error: str | None = None
 
 
+def acoustic_indices(audio: np.ndarray, sample_rate: int) -> dict:
+    """Ecoacoustic indices with scikit-maad; all null for pure digital silence.
+
+    Silence makes several indices undefined (NaN) and others meaningless, so
+    nothing is reported rather than misleading numbers.
+    """
+    names = [*TEMPORAL_INDICES, *SPECTRAL_INDICES]
+    if not np.any(audio):
+        return dict.fromkeys(names)
+
+    with warnings.catch_warnings():
+        # scikit-maad warns on log(0) in near-silent frames; NaNs are handled below
+        warnings.simplefilter("ignore")
+        temporal = maad_features.all_temporal_alpha_indices(audio, sample_rate)
+        sxx, tn, fn, _ = maad_sound.spectrogram(audio, sample_rate, **SPECTROGRAM)
+        spectral, _ = maad_features.all_spectral_alpha_indices(
+            sxx**2, tn, fn, **BANDS_HZ
+        )
+
+    values = {
+        ours: temporal[theirs].iloc[0] for ours, theirs in TEMPORAL_INDICES.items()
+    }
+    values |= {
+        ours: spectral[theirs].iloc[0] for ours, theirs in SPECTRAL_INDICES.items()
+    }
+    return {name: float(v) if np.isfinite(v) else None for name, v in values.items()}
+
+
 def extract_features(audio: np.ndarray, sample_rate: int, n_mfcc: int) -> dict:
     """Summarise a mono signal as a dict of features (one entry per column)."""
     mfcc = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=n_mfcc)
@@ -97,6 +155,7 @@ def extract_features(audio: np.ndarray, sample_rate: int, n_mfcc: int) -> dict:
         "spectral_bandwidth_hz": float(bandwidth.mean()),
         "rms_mean": float(librosa.feature.rms(y=audio).mean()),
         "zcr_mean": float(librosa.feature.zero_crossing_rate(audio).mean()),
+        **acoustic_indices(audio, sample_rate),
     }
 
 

@@ -54,6 +54,42 @@ models:
         description: Mean spectral bandwidth in Hz.
       - name: avg_zero_crossing_rate
         description: Mean zero-crossing rate, 0 to 1.
+      - name: avg_aci
+        description: "Mean ACI. Indices are context for exploration, not a measure of biodiversity."
+      - name: avg_adi
+        description: "Mean ADI. Indices are context for exploration, not a measure of biodiversity."
+      - name: avg_aei
+        description: "Mean AEI, 0 to 1. Indices are context for exploration, not a measure of biodiversity."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: avg_bi
+        description: "Mean bioacoustic index. Indices are context for exploration, not a measure of biodiversity."
+      - name: avg_ndsi
+        description: "Mean NDSI, -1 to 1. Indices are context for exploration, not a measure of biodiversity."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+      - name: avg_ht
+        description: "Mean temporal entropy, 0 to 1. Indices are context for exploration, not a measure of biodiversity."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: avg_hf
+        description: "Mean spectral entropy, 0 to 1. Indices are context for exploration, not a measure of biodiversity."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: avg_snrt_db
+        description: "Mean signal-to-noise ratio, in dB. Indices are context for exploration, not a measure of biodiversity."
       - name: rms_dbfs_vs_site_avg
         description: Loudness of this period minus the site's average over all its recordings, in dB.
       - name: loudness_rank_in_site

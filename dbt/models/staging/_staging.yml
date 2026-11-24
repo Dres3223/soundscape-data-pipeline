@@ -99,6 +99,56 @@ models:
                 max_value: 0
       - name: zero_crossing_rate
         description: Mean share of samples where the signal changes sign, 0 to 1.
+      - name: aci
+        description: "Acoustic Complexity Index: how much intensity changes from one moment to the next, summed over frequencies. Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: adi
+        description: "Acoustic Diversity Index: Shannon diversity of energy across 1 kHz bands; higher means energy spread over more bands. Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: aei
+        description: "Acoustic Evenness Index: Gini coefficient across 1 kHz bands, 0 to 1; higher means a few bands hold most energy. Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: bi
+        description: "Bioacoustic Index: energy above the quietest level in the 2–8 kHz band. Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: ndsi
+        description: "Normalized Difference Soundscape Index, -1 to 1: (biophony - anthropophony) / sum, with fixed bands (1–2 kHz vs 2–8 kHz). Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+      - name: ht
+        description: "Temporal entropy, 0 to 1: how evenly energy is spread over time. Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: hf
+        description: "Spectral entropy, 0 to 1: how evenly energy is spread over frequency. Null for pure digital silence."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: bgnt_db
+        description: "Background noise of the waveform, in dB relative to full scale; not calibrated. Null for pure digital silence."
+      - name: snrt_db
+        description: "Signal-to-noise ratio of the waveform, in dB. Null for pure digital silence."
       - name: mfcc_mean
         description: Mean of each MFCC over time; one value per coefficient.
       - name: mfcc_std

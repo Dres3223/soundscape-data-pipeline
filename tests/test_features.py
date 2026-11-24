@@ -61,3 +61,38 @@ def test_bad_audio_fails_without_raising(data):
     assert result.status == "failed"
     assert result.error
     assert result.features == {}
+
+
+INDICES = ["aci", "adi", "aei", "bi", "ndsi", "ht", "hf", "bgnt_db", "snrt_db"]
+
+
+def noise(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(0)
+    return (0.3 * rng.standard_normal(int(SAMPLE_RATE * seconds))).astype(np.float32)
+
+
+def test_indices_tell_a_pure_tone_from_noise():
+    tone_features = analyze(encode(tone(3000, 5), "WAV"), SAMPLE_RATE, 20).features
+    noise_features = analyze(encode(noise(5), "WAV"), SAMPLE_RATE, 20).features
+
+    # A tone concentrates its energy in one band; noise spreads it everywhere
+    assert tone_features["hf"] < 0.5 < noise_features["hf"]
+    assert tone_features["adi"] < noise_features["adi"]
+    assert tone_features["aei"] > noise_features["aei"]
+
+
+def test_indices_stay_in_their_ranges():
+    values = analyze(encode(noise(5), "WAV"), SAMPLE_RATE, 20).features
+
+    assert 0 <= values["aei"] <= 1
+    assert -1 <= values["ndsi"] <= 1
+    assert 0 <= values["ht"] <= 1
+    assert 0 <= values["hf"] <= 1
+
+
+def test_indices_are_null_for_pure_silence():
+    silence = np.zeros(SAMPLE_RATE * 2, dtype=np.float32)
+    result = analyze(encode(silence, "WAV"), SAMPLE_RATE, 20)
+
+    assert result.status == "ok"
+    assert all(result.features[name] is None for name in INDICES)

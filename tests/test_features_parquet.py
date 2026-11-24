@@ -38,6 +38,9 @@ def ok(n_mfcc: int = 20) -> FeatureResult:
             "spectral_bandwidth_hz": 4000.0,
             "rms_mean": 0.01,
             "zcr_mean": 0.2,
+            **dict.fromkeys(
+                ["aci", "adi", "aei", "bi", "ndsi", "ht", "hf", "bgnt_db", "snrt_db"]
+            ),
         },
     )
 

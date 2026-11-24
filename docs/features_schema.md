@@ -35,10 +35,32 @@ s3://soundscape/
 | `spectral_bandwidth_hz` | float32 | Hz | Mean spread of the energy around the centroid |
 | `rms_mean` | float32 | amplitude (0–1) | Mean RMS energy of the digital signal; not calibrated, so compare within a site only |
 | `zcr_mean` | float32 | fraction (0–1) | Mean zero-crossing rate: share of samples where the signal changes sign |
+| `aci` | float32 | | Acoustic Complexity Index: change of intensity between consecutive moments, summed over frequencies |
+| `adi` | float32 | | Acoustic Diversity Index: Shannon diversity of energy across 1 kHz bands |
+| `aei` | float32 | 0–1 | Acoustic Evenness Index: Gini coefficient across 1 kHz bands (higher = more concentrated) |
+| `bi` | float32 | | Bioacoustic Index: energy above the quietest level in 2–8 kHz |
+| `ndsi` | float32 | −1–1 | Normalized Difference Soundscape Index: 2–8 kHz ("biophony") against 1–2 kHz ("anthropophony") |
+| `ht` | float32 | 0–1 | Temporal entropy: evenness of energy over time |
+| `hf` | float32 | 0–1 | Spectral entropy: evenness of energy over frequency |
+| `bgnt_db` | float32 | dB | Background noise of the waveform, relative to full scale; not calibrated |
+| `snrt_db` | float32 | dB | Signal-to-noise ratio of the waveform |
 | `sample_rate_hz` | int32 | Hz | Sample rate used for extraction (`FEATURES_SAMPLE_RATE`) |
 | `n_mfcc` | int16 | count | Number of MFCC computed (`FEATURES_N_MFCC`) |
 | `features_version` | int16 | | Version of the calculation; raised in the code when it changes, so every recording is redone |
 | `extracted_at` | timestamp (µs, UTC) | | When the run that computed the row started; kept while the row stays up to date |
+
+Ecoacoustic indices come from [scikit-maad](https://scikit-maad.github.io/)
+(Ulloa et al. 2021, doi:10.1111/2041-210X.13711), with its default settings
+except for a fixed spectrogram (1,024-sample Hann window, 512 overlap) and the
+high band capped at 16 kHz; the exact settings are `SPECTROGRAM` and `BANDS_HZ`
+in `src/soundscape/features.py`. They are null for pure digital silence, where
+several are undefined. **They are not measures of biodiversity:** rain, wind,
+insects or the recorder can change them, and their bands were not designed
+for this tropical forest.
+
+On the 723 recordings processed so far (4 full sites), ACI stays around 300
+and ADI close to its maximum (~2.3) in every site and period: with these
+settings they barely separate recordings. BI and NDSI vary much more.
 
 Frame-level features (MFCC, centroid, bandwidth, RMS, zero-crossing rate)
 use librosa's defaults: 2,048-sample frames with a 512-sample hop

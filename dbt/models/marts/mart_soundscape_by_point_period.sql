@@ -19,7 +19,16 @@ by_period as (
         avg(spectral_centroid_hz)      as avg_spectral_centroid_hz,
         stddev_samp(spectral_centroid_hz) as stddev_spectral_centroid_hz,
         avg(spectral_bandwidth_hz)     as avg_spectral_bandwidth_hz,
-        avg(zero_crossing_rate)        as avg_zero_crossing_rate
+        avg(zero_crossing_rate)        as avg_zero_crossing_rate,
+        -- Ecoacoustic indices (averages skip recordings where they are null)
+        avg(aci)                       as avg_aci,
+        avg(adi)                       as avg_adi,
+        avg(aei)                       as avg_aei,
+        avg(bi)                        as avg_bi,
+        avg(ndsi)                      as avg_ndsi,
+        avg(ht)                        as avg_ht,
+        avg(hf)                        as avg_hf,
+        avg(snrt_db)                   as avg_snrt_db
     from recordings
     group by site_code, period, period_order
 
@@ -36,6 +45,14 @@ select
     stddev_spectral_centroid_hz,
     avg_spectral_bandwidth_hz,
     avg_zero_crossing_rate,
+    avg_aci,
+    avg_adi,
+    avg_aei,
+    avg_bi,
+    avg_ndsi,
+    avg_ht,
+    avg_hf,
+    avg_snrt_db,
 
     -- Window functions: compare each period with the other periods of its site.
     -- Site average weighted by recordings, so it equals the average over all of them
