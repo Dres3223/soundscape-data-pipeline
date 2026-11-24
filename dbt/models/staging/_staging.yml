@@ -149,6 +149,31 @@ models:
         description: "Background noise of the waveform, in dB relative to full scale; not calibrated. Null for pure digital silence."
       - name: snrt_db
         description: "Signal-to-noise ratio of the waveform, in dB. Null for pure digital silence."
+      - name: clipping_fraction
+        description: "Share of samples at or above 0.999 of full scale."
+      - name: longest_zero_run_s
+        description: "Longest stretch of exact digital zeros, in seconds."
+      - name: low_freq_energy_ratio
+        description: "Share of the energy below 200 Hz; high values suggest wind or other low-frequency noise."
+      - name: rain_band_psd_db
+        description: "Mean power in 600–1200 Hz, in dB (not calibrated); very high values match heavy rain."
+      - name: rain_band_snr
+        description: "Mean over standard deviation of the 600–1200 Hz power over time. In the visual review its highest values were steady insect-like choruses, not rain, so no flag uses it."
+      - name: is_clipped
+        description: "True when clipping_fraction above its threshold (seed qc_thresholds)."
+        data_tests: [not_null]
+      - name: has_dropout
+        description: "True when longest_zero_run_s above its threshold (seed qc_thresholds)."
+        data_tests: [not_null]
+      - name: is_heavy_rain
+        description: "True when rain_band_psd_db above its threshold (seed qc_thresholds)."
+        data_tests: [not_null]
+      - name: is_low_freq_noise
+        description: "True when low_freq_energy_ratio above its threshold (seed qc_thresholds)."
+        data_tests: [not_null]
+      - name: is_usable
+        description: "True when no quality flag is raised; the mart summarises only these recordings."
+        data_tests: [not_null]
       - name: mfcc_mean
         description: Mean of each MFCC over time; one value per coefficient.
       - name: mfcc_std

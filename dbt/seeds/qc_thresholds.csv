@@ -1,0 +1,5 @@
+flag,measure,threshold,unit
+is_clipped,clipping_fraction,0.001,share of samples
+has_dropout,longest_zero_run_s,0.1,seconds
+is_heavy_rain,rain_band_psd_db,12,dB
+is_low_freq_noise,low_freq_energy_ratio,0.5,share of energy

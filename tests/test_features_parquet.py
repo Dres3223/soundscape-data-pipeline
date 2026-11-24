@@ -39,7 +39,22 @@ def ok(n_mfcc: int = 20) -> FeatureResult:
             "rms_mean": 0.01,
             "zcr_mean": 0.2,
             **dict.fromkeys(
-                ["aci", "adi", "aei", "bi", "ndsi", "ht", "hf", "bgnt_db", "snrt_db"]
+                [
+                    "aci",
+                    "adi",
+                    "aei",
+                    "bi",
+                    "ndsi",
+                    "ht",
+                    "hf",
+                    "bgnt_db",
+                    "snrt_db",
+                    "clipping_fraction",
+                    "longest_zero_run_s",
+                    "low_freq_energy_ratio",
+                    "rain_band_psd_db",
+                    "rain_band_snr",
+                ]
             ),
         },
     )

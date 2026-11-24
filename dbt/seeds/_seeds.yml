@@ -36,3 +36,26 @@ seeds:
           - accepted_values:
               arguments:
                 values: [1, 2, 3, 4]
+
+  - name: qc_thresholds
+    description: >
+      Thresholds that turn the quality measures into flags. Set from the data and
+      a visual review of 40 spectrograms by a non-expert (docs/quality_review.md);
+      change a value here and rerun dbt build, no audio is recomputed.
+    config:
+      column_types:
+        flag: text
+        measure: text
+        threshold: double precision
+        unit: text
+    columns:
+      - name: flag
+        description: Name of the flag column in stg_audio_features.
+        data_tests: [unique, not_null]
+      - name: measure
+        description: Column of raw.audio_features the threshold applies to.
+      - name: threshold
+        description: The flag is true when the measure is above this value.
+        data_tests: [not_null]
+      - name: unit
+        description: Unit of the measure.

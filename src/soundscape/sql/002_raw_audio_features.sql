@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS raw.audio_features (
     hf                     real,
     bgnt_db                real,
     snrt_db                real,
+    -- Quality measures; flags are derived in dbt
+    clipping_fraction      real,
+    longest_zero_run_s     real,
+    low_freq_energy_ratio  real,
+    rain_band_psd_db       real,
+    rain_band_snr          real,
     sample_rate_hz         integer      NOT NULL,
     n_mfcc                 smallint     NOT NULL,
     features_version       smallint     NOT NULL,  -- version of the calculation
@@ -52,3 +58,11 @@ ALTER TABLE raw.audio_features
     ADD COLUMN IF NOT EXISTS hf real,
     ADD COLUMN IF NOT EXISTS bgnt_db real,
     ADD COLUMN IF NOT EXISTS snrt_db real;
+
+-- Quality measures, added in features version 3
+ALTER TABLE raw.audio_features
+    ADD COLUMN IF NOT EXISTS clipping_fraction real,
+    ADD COLUMN IF NOT EXISTS longest_zero_run_s real,
+    ADD COLUMN IF NOT EXISTS low_freq_energy_ratio real,
+    ADD COLUMN IF NOT EXISTS rain_band_psd_db real,
+    ADD COLUMN IF NOT EXISTS rain_band_snr real;

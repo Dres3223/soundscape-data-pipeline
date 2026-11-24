@@ -24,11 +24,18 @@ models:
       - name: period_order
         description: Position of the period in the day, 1 (dawn) to 4 (night).
       - name: n_recordings
-        description: Recordings of this site made in this period.
+        description: Usable recordings of this site made in this period (no quality flag).
         data_tests:
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 1
+      - name: n_excluded
+        description: Recordings of this site and period left out for a quality flag (see stg_audio_features).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
       - name: avg_rms_dbfs
         description: Mean level in dBFS; not calibrated, so compare within a site only.
         data_tests:

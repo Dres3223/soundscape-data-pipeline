@@ -96,3 +96,33 @@ def test_indices_are_null_for_pure_silence():
 
     assert result.status == "ok"
     assert all(result.features[name] is None for name in INDICES)
+
+
+def test_quality_measures_spot_clipping_and_dropouts():
+    clipped = np.clip(tone(1000, 2) * 4, -1, 1)
+    with_gap = tone(1000, 2)
+    with_gap[SAMPLE_RATE // 2 : SAMPLE_RATE] = 0  # half a second of silence
+
+    clipped_features = analyze(encode(clipped, "WAV"), SAMPLE_RATE, 20).features
+    gap_features = analyze(encode(with_gap, "WAV"), SAMPLE_RATE, 20).features
+
+    assert clipped_features["clipping_fraction"] > 0.5
+    assert gap_features["longest_zero_run_s"] == pytest.approx(0.5, abs=0.01)
+    assert gap_features["clipping_fraction"] == 0
+
+
+def test_quality_measures_spot_low_frequency_energy():
+    rumble = analyze(encode(tone(60, 2), "WAV"), SAMPLE_RATE, 20).features
+    whistle = analyze(encode(tone(3000, 2), "WAV"), SAMPLE_RATE, 20).features
+
+    assert rumble["low_freq_energy_ratio"] > 0.9
+    assert whistle["low_freq_energy_ratio"] < 0.01
+
+
+def test_rain_band_is_steadier_for_noise_than_for_a_short_call():
+    steady = analyze(encode(noise(5), "WAV"), SAMPLE_RATE, 20).features
+    call = tone(900, 5)
+    call[SAMPLE_RATE:] = 0  # one second of a 900 Hz call, then silence
+    bursty = analyze(encode(call, "WAV"), SAMPLE_RATE, 20).features
+
+    assert steady["rain_band_snr"] > bursty["rain_band_snr"]

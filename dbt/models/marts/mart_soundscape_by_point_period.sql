@@ -1,9 +1,28 @@
 -- One row per site and period of the day (dawn, day, dusk, night):
 -- how loud, how bright and how variable the soundscape is, and how each
 -- period compares with the rest of the day at the same site.
-with recordings as (
+-- Only recordings without quality flags are summarised; n_excluded counts
+-- the others, which stay available in stg_audio_features.
+with all_recordings as (
 
     select * from {{ ref('stg_audio_features') }}
+
+),
+
+recordings as (
+
+    select * from all_recordings where is_usable
+
+),
+
+excluded as (
+
+    select
+        site_code,
+        period,
+        count(*) filter (where not is_usable) as n_excluded
+    from all_recordings
+    group by site_code, period
 
 ),
 
@@ -35,10 +54,11 @@ by_period as (
 )
 
 select
-    site_code,
-    period,
+    by_period.site_code,
+    by_period.period,
     period_order,
     n_recordings,
+    excluded.n_excluded,
     avg_rms_dbfs,
     stddev_rms_dbfs,
     avg_spectral_centroid_hz,
@@ -59,7 +79,7 @@ select
     avg_rms_dbfs
         - sum(avg_rms_dbfs * n_recordings) over site / sum(n_recordings) over site
                                                    as rms_dbfs_vs_site_avg,
-    rank() over (partition by site_code order by avg_rms_dbfs desc)
+    rank() over (partition by by_period.site_code order by avg_rms_dbfs desc)
                                                    as loudness_rank_in_site,
     -- Change from the previous period of the day (dawn has none: it comes first)
     avg_rms_dbfs - lag(avg_rms_dbfs) over site_by_order
@@ -67,6 +87,9 @@ select
     avg_spectral_centroid_hz - lag(avg_spectral_centroid_hz) over site_by_order
                                                    as centroid_hz_change_vs_previous
 from by_period
+inner join excluded
+    on excluded.site_code = by_period.site_code
+    and excluded.period = by_period.period
 window
-    site as (partition by site_code),
-    site_by_order as (partition by site_code order by period_order)
+    site as (partition by by_period.site_code),
+    site_by_order as (partition by by_period.site_code order by period_order)

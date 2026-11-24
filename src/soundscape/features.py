@@ -42,12 +42,18 @@ from soundscape.storage import pg_connect, s3_client
 log = logging.getLogger("soundscape.features")
 
 # Raise it whenever the calculation changes: every recording is then redone
-FEATURES_VERSION = 2  # 2: ecoacoustic indices
+FEATURES_VERSION = 3  # 2: ecoacoustic indices; 3: quality measures
 
 # Ecoacoustic indices: scikit-maad defaults, with a fixed spectrogram and the
 # high band capped at 16 kHz, half the sample rate (docs/features_schema.md)
 SPECTROGRAM = {"mode": "amplitude", "nperseg": 1024, "noverlap": 512}
 BANDS_HZ = {"flim_low": [0, 1000], "flim_mid": [1000, 10000], "flim_hi": [10000, 16000]}
+# Quality measures (docs/features_schema.md): rain is loudest and steadiest in
+# 600-1200 Hz (Bedoya et al. 2017); wind concentrates energy below ~200 Hz
+RAIN_BAND_HZ = (600, 1200)
+WIND_BELOW_HZ = 200
+CLIPPING_LEVEL = 0.999  # share of full scale counted as clipped
+
 # Our column name -> scikit-maad's
 TEMPORAL_INDICES = {"ht": "Ht", "bgnt_db": "BGNt", "snrt_db": "SNRt"}
 SPECTRAL_INDICES = {
@@ -84,6 +90,12 @@ FEATURES_SCHEMA = pa.schema(
         ("hf", pa.float32()),
         ("bgnt_db", pa.float32()),
         ("snrt_db", pa.float32()),
+        # Quality measures; flags and thresholds are applied in dbt
+        ("clipping_fraction", pa.float32()),
+        ("longest_zero_run_s", pa.float32()),
+        ("low_freq_energy_ratio", pa.float32()),
+        ("rain_band_psd_db", pa.float32()),
+        ("rain_band_snr", pa.float32()),
         ("sample_rate_hz", pa.int32()),
         ("n_mfcc", pa.int16()),
         ("features_version", pa.int16()),
@@ -141,6 +153,40 @@ def acoustic_indices(audio: np.ndarray, sample_rate: int) -> dict:
     return {name: float(v) if np.isfinite(v) else None for name, v in values.items()}
 
 
+def longest_run_of_zeros(audio: np.ndarray) -> int:
+    """Length, in samples, of the longest stretch of exact digital zeros."""
+    is_zero = np.concatenate(([0], (audio == 0).astype(np.int8), [0]))
+    edges = np.flatnonzero(np.diff(is_zero))
+    return int((edges[1::2] - edges[::2]).max()) if edges.size else 0
+
+
+def quality_measures(audio: np.ndarray, sample_rate: int) -> dict:
+    """Numbers that help spot clipping, dropouts, wind and rain.
+
+    They are measures only: dbt turns them into flags with thresholds kept in a
+    seed, so a threshold can change without recomputing the audio.
+    """
+    power = np.abs(librosa.stft(audio, n_fft=2048, hop_length=512)) ** 2
+    freqs = librosa.fft_frequencies(sr=sample_rate, n_fft=2048)
+    total = power.sum()
+
+    in_band = (freqs >= RAIN_BAND_HZ[0]) & (freqs <= RAIN_BAND_HZ[1])
+    band = power[in_band].mean(axis=0)  # mean power of the band, per frame
+    band_mean = band.mean()
+    return {
+        "clipping_fraction": float(np.mean(np.abs(audio) >= CLIPPING_LEVEL)),
+        "longest_zero_run_s": longest_run_of_zeros(audio) / sample_rate,
+        "low_freq_energy_ratio": (
+            float(power[freqs < WIND_BELOW_HZ].sum() / total) if total > 0 else None
+        ),
+        # Loud (high PSD) and steady (high mean/std over time) means rain-like
+        "rain_band_psd_db": (
+            float(10 * np.log10(band_mean)) if band_mean > 0 else None
+        ),
+        "rain_band_snr": (float(band_mean / band.std()) if band.std() > 0 else None),
+    }
+
+
 def extract_features(audio: np.ndarray, sample_rate: int, n_mfcc: int) -> dict:
     """Summarise a mono signal as a dict of features (one entry per column)."""
     mfcc = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=n_mfcc)
@@ -156,6 +202,7 @@ def extract_features(audio: np.ndarray, sample_rate: int, n_mfcc: int) -> dict:
         "rms_mean": float(librosa.feature.rms(y=audio).mean()),
         "zcr_mean": float(librosa.feature.zero_crossing_rate(audio).mean()),
         **acoustic_indices(audio, sample_rate),
+        **quality_measures(audio, sample_rate),
     }
 
 

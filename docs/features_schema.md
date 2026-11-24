@@ -44,6 +44,11 @@ s3://soundscape/
 | `hf` | float32 | 0–1 | Spectral entropy: evenness of energy over frequency |
 | `bgnt_db` | float32 | dB | Background noise of the waveform, relative to full scale; not calibrated |
 | `snrt_db` | float32 | dB | Signal-to-noise ratio of the waveform |
+| `clipping_fraction` | float32 | 0–1 | Share of samples at or above 0.999 of full scale |
+| `longest_zero_run_s` | float32 | seconds | Longest stretch of exact digital zeros (dropouts) |
+| `low_freq_energy_ratio` | float32 | 0–1 | Share of the energy below 200 Hz (wind or other low-frequency noise) |
+| `rain_band_psd_db` | float32 | dB | Mean power in 600–1200 Hz, the band where rain is most prominent (Bedoya et al. 2017); not calibrated |
+| `rain_band_snr` | float32 | | Mean over standard deviation of that band's power over time |
 | `sample_rate_hz` | int32 | Hz | Sample rate used for extraction (`FEATURES_SAMPLE_RATE`) |
 | `n_mfcc` | int16 | count | Number of MFCC computed (`FEATURES_N_MFCC`) |
 | `features_version` | int16 | | Version of the calculation; raised in the code when it changes, so every recording is redone |
@@ -57,6 +62,10 @@ in `src/soundscape/features.py`. They are null for pure digital silence, where
 several are undefined. **They are not measures of biodiversity:** rain, wind,
 insects or the recorder can change them, and their bands were not designed
 for this tropical forest.
+
+Quality measures are only numbers; dbt turns them into flags with the
+thresholds in `dbt/seeds/qc_thresholds.csv`. How those thresholds were set,
+and their limits: [quality_review.md](quality_review.md).
 
 On the 723 recordings processed so far (4 full sites), ACI stays around 300
 and ADI close to its maximum (~2.3) in every site and period: with these
