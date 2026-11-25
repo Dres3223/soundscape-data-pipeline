@@ -111,3 +111,29 @@ models:
         description: Loudness change from the previous period of the day, in dB; null for dawn.
       - name: centroid_hz_change_vs_previous
         description: Spectral centroid change from the previous period of the day, in Hz; null for dawn.
+
+  - name: mart_species_by_site_period
+    description: >
+      Per site, period of the day and species, in how many usable recordings
+      BirdNET detected the species (both flags of stg_bird_detections). A naive
+      detection rate, unvalidated: not an abundance and not corrected for
+      missed or false detections.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [site_code, period, scientific_name]
+    columns:
+      - name: n_recordings_detected
+        description: Usable recordings with at least one detection of the species.
+      - name: n_recordings_analyzed
+        description: Usable recordings analyzed by BirdNET at this site and period.
+      - name: detection_rate
+        description: n_recordings_detected / n_recordings_analyzed.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: max_confidence
+        description: Highest BirdNET score of the species at this site and period.

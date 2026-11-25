@@ -1,9 +1,9 @@
-"""Daily pipeline: ingest → features → load.
+"""Daily pipeline: ingest → features and detections (in parallel) → load.
 
 Each task only calls a module of the soundscape package; the logic lives
 there and is tested with pytest. Every stage is idempotent, so re-running
 any date (Clear in the UI) leaves the same data: nothing is duplicated.
-Each run processes everything pending; see P1PDPS-32 for incremental features.
+Features and detections only analyze recordings that are new or outdated.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -46,13 +46,20 @@ def soundscape_pipeline():
         return {"ok": ok, "failed": len(results) - ok}
 
     @task
+    def detections() -> dict:
+        from soundscape import detections
+        from soundscape.config import Settings
+
+        return detections.run(Settings())
+
+    @task
     def load() -> dict:
         from soundscape import load
         from soundscape.config import Settings
 
         return load.run(Settings())
 
-    ingest() >> features() >> load()
+    ingest() >> [features(), detections()] >> load()
 
 
 soundscape_pipeline()

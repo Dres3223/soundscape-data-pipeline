@@ -1,11 +1,15 @@
-"""Load audio features from S3 (Parquet) into Postgres (raw.audio_features).
+"""Load features and detections from S3 (Parquet) into Postgres.
 
 Usage:
     uv run python -m soundscape.load
 
-Upsert keyed by sha256: a new recording is inserted, a recording whose
-features were re-extracted (newer extracted_at) is updated, anything else is
-left as it is. Re-running gives the same table, so the load is idempotent.
+Features go to raw.audio_features with an upsert keyed by sha256: a new
+recording is inserted, a recording whose features were re-extracted (newer
+extracted_at) is updated, anything else is left as it is.
+
+Detections go to raw.detection_recordings and raw.bird_detections: a recording
+analyzed again (newer detected_at) has its detections replaced as a whole.
+Re-running gives the same tables, so the load is idempotent.
 """
 
 import io
@@ -18,6 +22,7 @@ import pyarrow.parquet as pq
 from psycopg import sql
 from pydantic import ValidationError
 
+from soundscape import detections
 from soundscape.config import Settings
 from soundscape.features import FEATURES_SCHEMA
 from soundscape.storage import pg_connect, s3_client
@@ -51,8 +56,91 @@ def read_features(s3, bucket: str, keys: list[str]) -> pa.Table:
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:
-    sql_text = files("soundscape").joinpath("sql/002_raw_audio_features.sql")
-    conn.execute(sql_text.read_text())
+    for name in ("002_raw_audio_features.sql", "003_raw_bird_detections.sql"):
+        conn.execute(files("soundscape").joinpath("sql", name).read_text())
+
+
+def read_detections(s3, bucket: str) -> tuple[pa.Table, pa.Table]:
+    """Every recordings and detections file; refuse any with a different schema."""
+    tables = {}
+    for file_name, schema in (
+        (detections.RECORDINGS_FILE, detections.RECORDINGS_SCHEMA),
+        (detections.DETECTIONS_FILE, detections.DETECTIONS_SCHEMA),
+    ):
+        parts = []
+        for key in detections.list_keys(s3, bucket, file_name):
+            table = detections.read_parquet(s3, bucket, key)
+            if not table.schema.equals(schema, check_metadata=False):
+                raise ValueError(f"{key} does not match the detections schema")
+            parts.append(table)
+        tables[file_name] = pa.concat_tables(parts) if parts else schema.empty_table()
+    return tables[detections.RECORDINGS_FILE], tables[detections.DETECTIONS_FILE]
+
+
+def copy_rows(conn: psycopg.Connection, target: str, table: pa.Table) -> None:
+    names = table.schema.names
+    copy_sql = sql.SQL("COPY {} ({}) FROM STDIN").format(
+        sql.Identifier(target), sql.SQL(", ").join(map(sql.Identifier, names))
+    )
+    with conn.cursor().copy(copy_sql) as copy:
+        for row in table.to_pylist():
+            copy.write_row([row[name] for name in names])
+
+
+def upsert_detections(
+    conn: psycopg.Connection, recordings: pa.Table, found: pa.Table
+) -> dict[str, int]:
+    """Replace the detections of every recording analyzed since the last load."""
+    with conn.transaction():
+        conn.execute(
+            "CREATE TEMP TABLE recordings_batch"
+            " (LIKE raw.detection_recordings INCLUDING DEFAULTS) ON COMMIT DROP"
+        )
+        conn.execute(
+            "CREATE TEMP TABLE detections_batch"
+            " (LIKE raw.bird_detections) ON COMMIT DROP"
+        )
+        copy_rows(conn, "recordings_batch", recordings)
+        copy_rows(conn, "detections_batch", found)
+
+        # Recordings that are new or were analyzed again
+        conn.execute(
+            """
+            CREATE TEMP TABLE changed ON COMMIT DROP AS
+            SELECT batch.sha256
+            FROM recordings_batch AS batch
+            LEFT JOIN raw.detection_recordings AS stored USING (sha256)
+            WHERE stored.sha256 IS NULL OR batch.detected_at > stored.detected_at
+            """
+        )
+        # Deleting the recording row also deletes its detections (cascade)
+        conn.execute(
+            "DELETE FROM raw.detection_recordings WHERE sha256 IN (TABLE changed)"
+        )
+        recording_columns = sql.SQL(", ").join(
+            map(sql.Identifier, detections.RECORDINGS_SCHEMA.names)
+        )
+        conn.execute(
+            sql.SQL(
+                "INSERT INTO raw.detection_recordings ({0})"
+                " SELECT {0} FROM recordings_batch WHERE sha256 IN (TABLE changed)"
+            ).format(recording_columns)
+        )
+        detection_columns = sql.SQL(", ").join(
+            map(sql.Identifier, detections.DETECTIONS_SCHEMA.names)
+        )
+        inserted = conn.execute(
+            sql.SQL(
+                "INSERT INTO raw.bird_detections ({0})"
+                " SELECT {0} FROM detections_batch WHERE sha256 IN (TABLE changed)"
+            ).format(detection_columns)
+        ).rowcount
+        changed = conn.execute("SELECT count(*) FROM changed").fetchone()[0]
+    return {
+        "recordings": recordings.num_rows,
+        "replaced": changed,
+        "detections": inserted,
+    }
 
 
 def upsert_features(conn: psycopg.Connection, table: pa.Table) -> dict[str, int]:
@@ -101,7 +189,7 @@ def upsert_features(conn: psycopg.Connection, table: pa.Table) -> dict[str, int]
     }
 
 
-def run(settings: Settings) -> dict[str, int]:
+def run(settings: Settings) -> dict[str, dict[str, int]]:
     s3 = s3_client(settings)
     keys = list_feature_keys(s3, settings.s3_bucket)
     table = read_features(s3, settings.s3_bucket, keys)
@@ -112,13 +200,20 @@ def run(settings: Settings) -> dict[str, int]:
     with pg_connect(settings, autocommit=True) as conn:
         ensure_schema(conn)
         counts = upsert_features(conn, table)
+        analyzed, found = read_detections(s3, settings.s3_bucket)
+        detection_counts = upsert_detections(conn, analyzed, found)
     log.info(
         "Loaded into raw.audio_features: inserted=%d updated=%d unchanged=%d",
         counts["inserted"],
         counts["updated"],
         counts["unchanged"],
     )
-    return counts
+    log.info(
+        "Loaded detections: %d recordings re-analyzed, %d detections written",
+        detection_counts["replaced"],
+        detection_counts["detections"],
+    )
+    return {"features": counts, "detections": detection_counts}
 
 
 def main() -> None:

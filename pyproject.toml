@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Rodrigo Andrés Martínez" }]
 requires-python = ">=3.12"
 dependencies = [
+    "birdnet>=1.6.0",
     "boto3>=1.43.123",
     "librosa>=1.0.0",
     "psycopg[binary]>=3.3.6",

@@ -45,9 +45,10 @@ up: ## Build the images and start every service, waiting until they are healthy
 down: ## Stop the services (data is kept in the Docker volumes)
 	docker compose --profile emulator down
 
-run: ## Run the pipeline once: ingest, features, load, then dbt build
+run: ## Run the pipeline once: ingest, features, detections, load, then dbt build
 	uv run python -m soundscape.ingest
 	uv run python -m soundscape.features
+	uv run python -m soundscape.detections
 	uv run python -m soundscape.load
 	$(DBT) deps $(DBT_ARGS)
 	$(DBT) build $(DBT_ARGS)

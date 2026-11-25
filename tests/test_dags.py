@@ -35,11 +35,12 @@ def test_dags_load_without_import_errors(dags):
     assert {"soundscape_pipeline", "smoke_check"} <= set(dags)
 
 
-def test_pipeline_runs_ingest_then_features_then_load(dags):
+def test_pipeline_runs_features_and_detections_between_ingest_and_load(dags):
     tasks = dags["soundscape_pipeline"].task_dict
 
-    assert tasks["ingest"].downstream_task_ids == {"features"}
+    assert tasks["ingest"].downstream_task_ids == {"features", "detections"}
     assert tasks["features"].downstream_task_ids == {"load"}
+    assert tasks["detections"].downstream_task_ids == {"load"}
     assert tasks["load"].downstream_task_ids == set()
 
 

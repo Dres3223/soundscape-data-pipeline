@@ -59,3 +59,21 @@ seeds:
         data_tests: [not_null]
       - name: unit
         description: Unit of the measure.
+
+  - name: detection_thresholds
+    description: >
+      Thresholds for BirdNET detections: the BirdNET-Analyzer defaults for now
+      (0.5 confidence is a common choice; 0.03 is the geographic model's
+      default), to be calibrated in P1PDPS-39. Change a value and rerun dbt
+      build, BirdNET does not run again.
+    config:
+      column_types:
+        flag: text
+        measure: text
+        threshold: double precision
+        unit: text
+    columns:
+      - name: flag
+        data_tests: [unique, not_null]
+      - name: threshold
+        data_tests: [not_null]

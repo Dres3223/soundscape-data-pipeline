@@ -28,3 +28,42 @@ sources:
                   arguments:
                     to: source('raw', 'recordings')
                     field: sha256
+
+      - name: detection_recordings
+        description: One row per recording analyzed by BirdNET, with or without detections (soundscape.detections, loaded by soundscape.load).
+        columns:
+          - name: sha256
+            description: Recording analyzed.
+            data_tests:
+              - unique
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('raw', 'recordings')
+                    field: sha256
+          - name: status
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [ok, failed]
+
+      - name: bird_detections
+        description: BirdNET scores of at least min_confidence, one row per recording, 3-second segment and species.
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [sha256, start_s, scientific_name]
+        columns:
+          - name: sha256
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('raw', 'detection_recordings')
+                    field: sha256
+          - name: confidence
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments:
+                    min_value: 0
+                    max_value: 1

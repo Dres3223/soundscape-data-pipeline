@@ -58,7 +58,7 @@ Solid lines and boxes are built; dashed ones are planned.
 | Load | ✅ Built | Upserts features from Parquet into `raw.audio_features` in Postgres |
 | dbt | ✅ Built | Staging views and a mart per site and period of the day, with 40 data tests |
 | Dashboard | ✅ Built | Streamlit app over the mart: loudness by site and period, one site through the day |
-| Airflow | ✅ Built | Runs ingest → features → load daily, with retries; re-running a date duplicates nothing |
+| Airflow | ✅ Built | Runs ingest → features and detections → load daily, with retries; re-running a date duplicates nothing |
 
 ## What these results can and cannot say
 
@@ -88,7 +88,7 @@ data. Treat them as exploration:
 make setup   # dependencies, git hooks, and .env with random secrets
 make data    # dataset metadata and the 16-recording sample from Kaggle
 make up      # build and start Postgres, RustFS, Airflow and the dashboard
-make run     # ingest → features → load → dbt build
+make run     # ingest → features → detections → load → dbt build
 ```
 Then open the dashboard at http://localhost:8501. `make` alone lists every
 command (`make test`, `make lint`, `make down`...). The numbered steps below
@@ -152,6 +152,14 @@ One row per recording (MFCC, spectral centroid and bandwidth, RMS,
 zero-crossing rate), partitioned in `s3://soundscape/features/site=<site>/month=<YYYY-MM>/`.
 Recordings that cannot be decoded go to `features_failed/`.
 Columns, types and units: [docs/features_schema.md](docs/features_schema.md).
+
+```bash
+uv run python -m soundscape.detections   # bird species with BirdNET, to S3 as Parquet
+```
+Automatic, unvalidated detections per 3-second segment, in
+`s3://soundscape/detections/site=<site>/month=<YYYY-MM>/`; the first run
+downloads the BirdNET models (~90 MB). Details and limits:
+[docs/detections_schema.md](docs/detections_schema.md).
 
 ### 7. Load features into Postgres
 ```bash

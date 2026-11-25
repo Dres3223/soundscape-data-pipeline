@@ -16,7 +16,7 @@ import soundfile as sf
 from botocore.exceptions import BotoCoreError, ClientError
 from psycopg import sql
 
-from soundscape import features, ingest, load
+from soundscape import detections, features, ingest, load
 from soundscape.config import Settings
 from soundscape.storage import pg_connect, s3_client
 
@@ -27,6 +27,7 @@ TEST_BUCKET = "soundscape-test"
 SAMPLE_RATE = 32000
 # Two sites and two months, so features land in two partitions
 FILE_NAMES = ["T01_20230422_014500.ogg", "T02_20230512_060000.ogg"]
+DETECTIONS_VERSION_NEXT = detections.DETECTIONS_VERSION + 1
 
 
 def write_tone(path, frequency_hz: float) -> None:
@@ -147,11 +148,11 @@ def test_load_is_idempotent_and_updates_re_extracted_features(settings):
     ingest.run(settings)
     features.run(settings)
 
-    first = load.run(settings)
-    second = load.run(settings)
+    first = load.run(settings)["features"]
+    second = load.run(settings)["features"]
     # Other settings force a re-extraction, with a newer extracted_at
     features.run(settings.model_copy(update={"features_n_mfcc": 13}))
-    third = load.run(settings)
+    third = load.run(settings)["features"]
 
     assert first == {"read": 2, "inserted": 2, "updated": 0, "unchanged": 0}
     assert second == {"read": 2, "inserted": 0, "updated": 0, "unchanged": 2}
@@ -173,7 +174,7 @@ def test_load_never_overwrites_with_an_older_extraction(settings):
     for key, table in tables.items():
         put_table(settings, key, table)
 
-    counts = load.run(settings)
+    counts = load.run(settings)["features"]
 
     assert counts["updated"] == 0
     assert feature_rows(settings) == before
@@ -201,7 +202,7 @@ def test_features_do_nothing_when_up_to_date(settings):
     load.run(settings)
 
     assert features.run(settings) == []
-    assert load.run(settings) == {
+    assert load.run(settings)["features"] == {
         "read": 2,
         "inserted": 0,
         "updated": 0,
@@ -233,3 +234,57 @@ def test_features_new_recording_keeps_the_rows_of_its_partition(settings):
     key = "features/site=T01/month=2023-04/features.parquet"
     body = s3_client(settings).get_object(Bucket=TEST_BUCKET, Key=key)["Body"]
     assert pq.read_table(io.BytesIO(body.read())).num_rows == 2
+
+
+def fake_birdnet(
+    monkeypatch, label: str = "Sporophila funerea_Thick-billed Seed-Finch"
+):
+    """BirdNET without the model: every file gets one detection of `label`."""
+
+    def detect(paths):
+        found = {
+            path.name: [
+                {"start_s": 0.0, "end_s": 3.0, "label": label, "confidence": 0.9}
+            ]
+            for path in paths
+        }
+        return found, {}
+
+    monkeypatch.setattr(detections, "detect", detect)
+    monkeypatch.setattr(
+        detections, "geo_scores", lambda weeks: {w: {label: 0.1} for w in weeks}
+    )
+
+
+def detection_count(settings: Settings) -> int:
+    with pg_connect(settings) as conn:
+        return conn.execute("SELECT count(*) FROM raw.bird_detections").fetchone()[0]
+
+
+def test_detections_are_incremental_and_load_replaces_reanalyzed(settings, monkeypatch):
+    ingest.run(settings)
+    fake_birdnet(monkeypatch)
+
+    first = detections.run(settings)
+    second = detections.run(settings)
+    loaded = load.run(settings)["detections"]
+    reloaded = load.run(settings)["detections"]
+
+    assert first == {"analyzed": 2, "failed": 0, "detections": 2}
+    assert second == {"analyzed": 0, "failed": 0, "detections": 0}
+    assert object_keys(settings, "detections/") == [
+        "detections/site=T01/month=2023-04/detections.parquet",
+        "detections/site=T01/month=2023-04/recordings.parquet",
+        "detections/site=T02/month=2023-05/detections.parquet",
+        "detections/site=T02/month=2023-05/recordings.parquet",
+    ]
+    assert loaded == {"recordings": 2, "replaced": 2, "detections": 2}
+    assert reloaded == {"recordings": 2, "replaced": 0, "detections": 0}
+
+    # A new version of the code re-analyzes everything; the load replaces,
+    # never duplicates, the detections of each recording
+    monkeypatch.setattr(detections, "DETECTIONS_VERSION", DETECTIONS_VERSION_NEXT)
+    fake_birdnet(monkeypatch, label="Engine_Engine")
+    assert detections.run(settings)["analyzed"] == 2
+    assert load.run(settings)["detections"]["replaced"] == 2
+    assert detection_count(settings) == 2

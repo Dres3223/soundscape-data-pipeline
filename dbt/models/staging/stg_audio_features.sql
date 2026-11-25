@@ -16,8 +16,7 @@ thresholds as (
 
     select * from {{ ref('qc_thresholds') }}
 
-)
-,
+),
 
 flagged as (
 

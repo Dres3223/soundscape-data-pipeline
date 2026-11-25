@@ -82,7 +82,14 @@ jobs:
           -v app_user=soundscape -f docker/postgres/create_dashboard_role.sql
       - name: Unit and integration tests, coverage of at least 70 %
         run: make test PYTEST_ARGS=--cov-fail-under=70
-      - name: "End to end: synthetic recordings → ingest → features → load → dbt build"
+      # BirdNET models (~90 MB from Zenodo), downloaded once per birdnet version
+      - name: Cache the BirdNET models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/birdnet
+          key: birdnet-${{ hashFiles('uv.lock') }}
+          restore-keys: birdnet-
+      - name: "End to end: synthetic recordings → ingest → features → detections → load → dbt build"
         run: |
           uv run python scripts/make_synthetic_recordings.py
           make run
@@ -154,7 +161,7 @@ jobs:
         run: |
           docker run --rm "$IMAGE:$SHA_TAG" --help
           docker run --rm --entrypoint python "$IMAGE:$SHA_TAG" \
-            -c "import soundscape.ingest, soundscape.features, soundscape.load"
+            -c "import soundscape.ingest, soundscape.features, soundscape.detections, soundscape.load"
       - name: Log in to GHCR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

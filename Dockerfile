@@ -1,4 +1,5 @@
-# Image of the pipeline package: runs one stage (ingest, features or load).
+# Image of the pipeline package: runs one stage (ingest, features, detections
+# or load). The BirdNET models are downloaded on the first detections run.
 #   docker run --env-file .env ghcr.io/dres3223/soundscape-data-pipeline ingest
 # Multi-stage: the builder has uv and installs the locked dependencies; the
 # runtime image only receives the resulting virtual environment.
@@ -30,7 +31,7 @@ FROM python:3.12.15-slim AS runtime
 
 # Links the image to its repository on GitHub (and to its description)
 LABEL org.opencontainers.image.source="https://github.com/Dres3223/soundscape-data-pipeline" \
-      org.opencontainers.image.description="Soundscape pipeline stages: ingest, features, load" \
+      org.opencontainers.image.description="Soundscape pipeline stages: ingest, features, detections, load" \
       org.opencontainers.image.licenses="MIT"
 
 # Never run as root inside the container

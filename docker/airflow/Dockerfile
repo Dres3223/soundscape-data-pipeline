@@ -13,4 +13,10 @@ COPY --chown=airflow:root src ./src
 # while it resolves our dependencies
 RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" -e .
 
+# BirdNET models (~90 MB) inside the image: tasks never download them, and a
+# new container does not need the network to detect birds
+RUN python -c "import birdnet; \
+birdnet.load('acoustic', '2.4', 'tf', library='litert'); \
+birdnet.load('geo', '2.4', 'tf', library='litert')"
+
 WORKDIR /opt/airflow

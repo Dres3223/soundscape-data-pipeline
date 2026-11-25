@@ -62,3 +62,26 @@ def test_read_features_rejects_a_different_schema():
 
     with pytest.raises(ValueError, match="does not match FEATURES_SCHEMA"):
         read_features(s3, "bucket", ["features/bad.parquet"])
+
+
+def test_read_detections_with_no_files_gives_empty_tables():
+    from soundscape import detections
+    from soundscape.load import read_detections
+
+    analyzed, found = read_detections(FakeS3({}), "bucket")
+
+    assert analyzed.schema == detections.RECORDINGS_SCHEMA
+    assert found.schema == detections.DETECTIONS_SCHEMA
+    assert analyzed.num_rows == found.num_rows == 0
+
+
+def test_read_detections_rejects_a_different_schema():
+    from soundscape.load import read_detections
+
+    other = pa.table({"sha256": ["0" * 64]})
+    s3 = FakeS3(
+        {"detections/site=H02/month=2023-04/recordings.parquet": parquet(other)}
+    )
+
+    with pytest.raises(ValueError, match="does not match the detections schema"):
+        read_detections(s3, "bucket")

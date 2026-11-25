@@ -184,3 +184,31 @@ models:
         description: Sample rate used for the extraction, in Hz.
       - name: extracted_at
         description: When the features were computed.
+
+  - name: stg_bird_detections
+    description: >
+      BirdNET V2.4 detections with the period of the day and two flags from the
+      detection_thresholds seed. Automatic and unvalidated; see
+      docs/detections_schema.md.
+    columns:
+      - name: recording_id
+        data_tests: [not_null]
+      - name: period
+        data_tests: [not_null]
+      - name: scientific_name
+        description: Species (or, for a few non-bird classes such as Engine, the class name).
+        data_tests: [not_null]
+      - name: confidence
+        description: BirdNET score from 0 to 1; not a probability.
+      - name: geo_score
+        description: Score of BirdNET's geographic model for the species at the reserve in that week.
+      - name: is_confident
+        description: True when confidence reaches its threshold in the seed.
+        data_tests: [not_null]
+      - name: is_expected_here
+        description: >
+          True when geo_score reaches its threshold in the seed. It drops clear
+          errors (species from other continents, non-bird classes) but also
+          plausible nocturnal species such as owls, which the geographic model
+          undervalues.
+        data_tests: [not_null]
