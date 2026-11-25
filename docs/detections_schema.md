@@ -65,6 +65,37 @@ species was detected per site and period of the day.
   eBird, where nocturnal species are under-reported. Results by period
   undercount owls at night.
 
+## Which of the dataset's birds BirdNET covers
+
+[`detections_coverage.csv`](detections_coverage.csv) matches the 146 birds of
+the BirdCLEF 2025 taxonomy (`taxonomy.csv`) with BirdNET's classes, and gives
+each one's highest geographic score at the reserve in the weeks of the
+recordings (15–20). Made with `scripts/birdnet_coverage.py`.
+
+- **145 of 146 are BirdNET classes**, all by scientific name. Not covered:
+  Shining-green Hummingbird (*Chrysuronia goudoti*), which BirdNET can never
+  detect.
+- **The names do not always mean the same species.** The dataset follows
+  iNaturalist, BirdNET follows eBird. *Schiffornis turdina* is one broad
+  species in the first and is split in the second: BirdNET's
+  *S. turdina* is an Amazonian bird (geographic score 0.0), and the one
+  expected in the Magdalena valley is *S. stenorhyncha* (0.056). Comparisons
+  with the dataset's labels must map such cases by hand.
+- **The geographic filter (0.03) would drop 5 of the 145**, even though they
+  are listed for the reserve: Spectacled Owl (0.029), Striped Owl (0.022),
+  Red-and-green Macaw (0.029), Royal Flycatcher (0.024) and *S. turdina*.
+  With 0.02, the value used by Funosas et al. (2026, *Ecological Indicators*
+  182:114550), only *S. turdina* would. P1PDPS-39 sets the threshold with
+  data.
+
+## Speed
+
+On an Apple M1 Pro (10 cores) with the LiteRT backend, BirdNET takes
+**0.11 s per one-minute recording** (two batches of 100 random recordings:
+0.107 s each). The 9,726 BirdCLEF 2025 `train_soundscapes` would take
+about 18 minutes, plus reading them from S3; slower machines, or Docker on a
+Mac, take longer.
+
 ## Limits
 
 - Unvalidated: P1PDPS-39 compares them with the expert-style labels of El
