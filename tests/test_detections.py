@@ -1,5 +1,8 @@
+import sys
+import types
 from datetime import UTC, datetime
 
+import pandas as pd
 import pyarrow as pa
 
 from soundscape import detections
@@ -145,3 +148,39 @@ def test_empty_tables_keep_their_schema():
     assert table.num_rows == 0
     assert isinstance(table, pa.Table)
     assert detections.PREFIX == "detections/"
+
+
+class FakeResult:
+    """What BirdNET's predict returns: inputs sorted, failures as indices."""
+
+    def __init__(self, paths, unreadable):
+        self.inputs = sorted({str(path) for path in paths})
+        self.unprocessable_inputs = [
+            index for index, path in enumerate(self.inputs) if path in unreadable
+        ]
+        self.rows = [
+            (path, 0.0, 3.0, SEED_FINCH, 0.9)
+            for path in self.inputs
+            if path not in unreadable
+        ]
+
+    def to_dataframe(self):
+        columns = ["input", "start_time", "end_time", "species_name", "confidence"]
+        return pd.DataFrame(self.rows, columns=columns)
+
+
+def test_detect_names_the_files_birdnet_could_not_read(monkeypatch, tmp_path):
+    good, bad = tmp_path / "b_good.ogg", tmp_path / "a_bad.ogg"
+
+    class Model:
+        def predict(self, paths, **kwargs):
+            return FakeResult(paths, {str(bad)})
+
+    fake = types.SimpleNamespace(load=lambda *args, **kwargs: Model())
+    monkeypatch.setitem(sys.modules, "birdnet", fake)
+
+    # `bad` is second in the list but first once BirdNET sorts the inputs
+    found, failed = detections.detect([good, bad])
+
+    assert failed == {"a_bad.ogg": "BirdNET could not read the audio"}
+    assert list(found) == ["b_good.ogg"]

@@ -7,8 +7,8 @@ BirdNET V2.4 (Kahl et al. 2021) splits each recording into 3-second segments
 and scores every species it knows from 0 to 1. Every score of at least
 MIN_CONFIDENCE is kept, one row per recording, segment and species; dbt then
 decides with the thresholds in a seed which ones count (schema and limits:
-docs/detections_schema.md). The scores are not probabilities and are
-unvalidated until P1PDPS-39.
+docs/detections_schema.md). The scores are not probabilities; how often they
+agree with published labels at El Silencio: docs/validation.md.
 
 Each detection also carries the score of BirdNET's geographic model for that
 species at the reserve in that week of the year, so dbt can drop species that
@@ -144,9 +144,11 @@ def detect(paths: list[Path]) -> tuple[dict[str, list[dict]], dict[str, str]]:
                 "confidence": float(row.confidence),
             }
         )
+    # Indices into result.inputs, which BirdNET de-duplicates and sorts: not
+    # positions in `paths`
     failed = {
-        Path(str(path)).name: "BirdNET could not read the audio"
-        for path in result.unprocessable_inputs
+        Path(str(result.inputs[index])).name: "BirdNET could not read the audio"
+        for index in result.unprocessable_inputs
     }
     return found, failed
 
