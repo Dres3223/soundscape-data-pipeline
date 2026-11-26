@@ -8,5 +8,5 @@ package, imported inside each task so parsing the file stays fast.
 
 | DAG | Schedule | Purpose |
 |---|---|---|
-| `soundscape_pipeline` | daily | ingest → features → load; 2 retries, 1 h timeout per task |
+| `soundscape_pipeline` | daily | ingest → features and detections → load; 2 retries, 1 h timeout per task (3 h for features) |
 | `smoke_check` | manual | Checks that tasks can import `soundscape` |

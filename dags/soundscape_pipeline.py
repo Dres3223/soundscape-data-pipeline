@@ -35,7 +35,9 @@ def soundscape_pipeline():
 
         return ingest.run(Settings())
 
-    @task
+    # The full dataset (~9,700 recordings) takes ~1.2 h with 4 processes;
+    # a daily run with a few new recordings, minutes
+    @task(execution_timeout=timedelta(hours=3))
     def features() -> dict:
         from soundscape import features
         from soundscape.config import Settings

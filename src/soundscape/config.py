@@ -1,9 +1,15 @@
 """Pipeline configuration, read from environment variables (and .env)."""
 
+import os
 from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def default_workers() -> int:
+    """All cores but two, left for Postgres, S3 and the scheduler."""
+    return max(1, (os.cpu_count() or 1) - 2)
 
 
 class Settings(BaseSettings):
@@ -32,6 +38,8 @@ class Settings(BaseSettings):
     # Feature extraction: keep the native 32 kHz so sounds up to 16 kHz survive
     features_sample_rate: int = Field(default=32000, gt=0)
     features_n_mfcc: int = Field(default=20, gt=0)
+    # Processes that analyze recordings at the same time
+    features_workers: int = Field(default_factory=default_workers, gt=0)
 
     @field_validator("s3_endpoint_url", mode="before")
     @classmethod

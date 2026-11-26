@@ -51,4 +51,6 @@ def test_pipeline_tasks_retry_and_time_out(dags):
     for task in dag.tasks:
         assert task.retries == 2
         assert task.retry_delay == timedelta(minutes=2)
-        assert task.execution_timeout == timedelta(hours=1)
+        # Features take longest on the full dataset
+        hours = 3 if task.task_id == "features" else 1
+        assert task.execution_timeout == timedelta(hours=hours)

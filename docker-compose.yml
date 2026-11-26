@@ -20,6 +20,8 @@ x-airflow-common: &airflow-common
     POSTGRES_PORT: "5432"
     S3_ENDPOINT_URL: http://rustfs:9000
     INGEST_SOURCE_DIR: /opt/airflow/data/raw/birdclef/train_soundscapes
+    # ~800 MB each: 4 fit next to Airflow and BirdNET in Docker's memory
+    FEATURES_WORKERS: "4"
     AIRFLOW__CORE__EXECUTOR: LocalExecutor  # tasks run inside the scheduler
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD in .env}@postgres:5432/airflow

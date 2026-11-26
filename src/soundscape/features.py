@@ -16,15 +16,23 @@ Results are written to S3 as Parquet (schema: docs/features_schema.md):
 The run is incremental: only recordings without up-to-date features are
 analyzed, and only the partitions they belong to are rewritten, keeping the
 rows already there. Re-running with nothing new does no work.
+
+Recordings are analyzed in parallel (FEATURES_WORKERS processes) and written
+every CHUNK_SIZE recordings, so a run that stops halfway keeps what it did and
+the next one carries on from there.
 """
 
 import io
 import logging
+import multiprocessing
 import warnings
 from collections import defaultdict
 from collections.abc import Iterable
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from itertools import repeat
 
 import librosa
 import numpy as np
@@ -43,6 +51,7 @@ log = logging.getLogger("soundscape.features")
 
 # Raise it whenever the calculation changes: every recording is then redone
 FEATURES_VERSION = 3  # 2: ecoacoustic indices; 3: quality measures
+CHUNK_SIZE = 250  # recordings analyzed between two writes to S3
 
 # Ecoacoustic indices: scikit-maad defaults, with a fixed spectrogram and the
 # high band capped at 16 kHz, half the sample rate (docs/features_schema.md)
@@ -338,28 +347,67 @@ def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
             pending.append(recording)
     log.info("Up to date: %d; to analyze: %d", len(kept_rows), len(pending))
 
-    results = []
-    for recording in pending:
-        body = s3.get_object(Bucket=settings.s3_bucket, Key=recording["s3_key"])
-        result = analyze(body["Body"].read(), sample_rate, n_mfcc)
-        if result.status == "ok":
-            log.info("Extracted %s", recording["file_name"])
-        else:
-            log.warning("Failed %s: %s", recording["file_name"], result.error)
-        results.append((recording, result))
-
-    tables, failed = build_tables(
-        results,
-        sample_rate,
-        n_mfcc,
-        extracted_at=datetime.now(UTC),
-        kept_rows=kept_rows,
+    # By partition, so each chunk rewrites few files
+    pending.sort(key=lambda r: (r["site_code"], r["recorded_at"], r["file_name"]))
+    kept = {row["sha256"]: row for row in kept_rows}
+    workers = min(settings.features_workers, max(1, len(pending)))
+    # spawn: the same on macOS and Linux, and safe inside Airflow's process
+    pool = (
+        ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
+        if workers > 1
+        else nullcontext()
     )
-    for key, table in tables.items():
-        put_parquet(s3, settings.s3_bucket, key, table)
-        log.info("Wrote %d rows to s3://%s/%s", table.num_rows, settings.s3_bucket, key)
-    # Always written, even empty, so the latest run's failures are what it shows
-    put_parquet(s3, settings.s3_bucket, FAILED_KEY, failed)
+    results, failures = [], []
+    with pool:
+        mapper = pool.map if workers > 1 else map
+        for start in range(0, len(pending), CHUNK_SIZE):
+            chunk = pending[start : start + CHUNK_SIZE]
+            bodies = [
+                s3.get_object(Bucket=settings.s3_bucket, Key=r["s3_key"])["Body"].read()
+                for r in chunk
+            ]
+            chunk_results = list(
+                zip(
+                    chunk,
+                    mapper(analyze, bodies, repeat(sample_rate), repeat(n_mfcc)),
+                    strict=True,
+                )
+            )
+            for recording, result in chunk_results:
+                if result.status != "ok":
+                    log.warning("Failed %s: %s", recording["file_name"], result.error)
+            tables, failed = build_tables(
+                chunk_results,
+                sample_rate,
+                n_mfcc,
+                extracted_at=datetime.now(UTC),
+                kept_rows=kept.values(),
+            )
+            for key, table in tables.items():
+                put_parquet(s3, settings.s3_bucket, key, table)
+                kept.update({row["sha256"]: row for row in table.to_pylist()})
+            failures += failed.to_pylist()
+            put_parquet(
+                s3,
+                settings.s3_bucket,
+                FAILED_KEY,
+                pa.Table.from_pylist(failures, schema=FAILED_SCHEMA),
+            )
+            results += chunk_results
+            log.info(
+                "Analyzed %d of %d recordings (%d partitions written)",
+                start + len(chunk),
+                len(pending),
+                len(tables),
+            )
+    if not pending:
+        # Always written, even empty, so the latest run's failures are what it shows
+        put_parquet(
+            s3,
+            settings.s3_bucket,
+            FAILED_KEY,
+            pa.Table.from_pylist([], schema=FAILED_SCHEMA),
+        )
     return results
 
 

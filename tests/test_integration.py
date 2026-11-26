@@ -236,6 +236,44 @@ def test_features_new_recording_keeps_the_rows_of_its_partition(settings):
     assert pq.read_table(io.BytesIO(body.read())).num_rows == 2
 
 
+def test_features_in_parallel_and_in_chunks_fill_every_partition(settings, monkeypatch):
+    # Third file in the same partition as the first: chunks of one recording
+    # must not drop the rows written by an earlier chunk
+    write_tone(settings.ingest_source_dir / "T01_20230423_060000.ogg", 3000)
+    ingest.run(settings)
+    monkeypatch.setattr(features, "CHUNK_SIZE", 1)
+
+    results = features.run(settings.model_copy(update={"features_workers": 2}))
+
+    assert [result.status for _, result in results] == ["ok"] * 3
+    s3 = s3_client(settings)
+    key = "features/site=T01/month=2023-04/features.parquet"
+    body = s3.get_object(Bucket=TEST_BUCKET, Key=key)["Body"]
+    assert pq.read_table(io.BytesIO(body.read())).num_rows == 2
+
+
+def test_features_keep_finished_chunks_when_a_run_stops(settings, monkeypatch):
+    ingest.run(settings)
+    one_process = settings.model_copy(update={"features_workers": 1})
+    monkeypatch.setattr(features, "CHUNK_SIZE", 1)
+    analyze = features.analyze
+    calls = []
+
+    def analyze_then_crash(*args):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("worker killed")
+        return analyze(*args)
+
+    monkeypatch.setattr(features, "analyze", analyze_then_crash)
+    with pytest.raises(RuntimeError):
+        features.run(one_process)
+    assert len(object_keys(settings, "features/")) == 1
+
+    monkeypatch.setattr(features, "analyze", analyze)
+    assert len(features.run(one_process)) == 1
+
+
 def fake_birdnet(
     monkeypatch, label: str = "Sporophila funerea_Thick-billed Seed-Finch"
 ):
@@ -288,3 +326,26 @@ def test_detections_are_incremental_and_load_replaces_reanalyzed(settings, monke
     assert detections.run(settings)["analyzed"] == 2
     assert load.run(settings)["detections"]["replaced"] == 2
     assert detection_count(settings) == 2
+
+
+def test_detections_keep_finished_checkpoints_when_a_run_stops(settings, monkeypatch):
+    ingest.run(settings)
+    fake_birdnet(monkeypatch)
+    monkeypatch.setattr(detections, "CHECKPOINT_SIZE", 1)
+    monkeypatch.setattr(detections, "BATCH_SIZE", 1)
+    detect = detections.detect
+    calls = []
+
+    def detect_then_crash(paths):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("BirdNET crashed")
+        return detect(paths)
+
+    monkeypatch.setattr(detections, "detect", detect_then_crash)
+    with pytest.raises(RuntimeError):
+        detections.run(settings)
+    assert len(object_keys(settings, "detections/")) == 2  # one partition
+
+    monkeypatch.setattr(detections, "detect", detect)
+    assert detections.run(settings)["analyzed"] == 1

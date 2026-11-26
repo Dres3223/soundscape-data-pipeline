@@ -19,7 +19,8 @@ Results are written to S3 as Parquet, partitioned like the features:
     detections/site=<site>/month=<YYYY-MM>/recordings.parquet  (one row per recording)
 The recordings file lists every recording analyzed, with or without detections,
 so a recording with no birds is told apart from one never analyzed. The run is
-incremental, like soundscape.features.
+incremental, like soundscape.features, and writes every CHECKPOINT_SIZE
+recordings, so a run that stops halfway keeps what it did.
 """
 
 import io
@@ -48,6 +49,7 @@ MIN_CONFIDENCE = 0.1  # lowest score stored; dbt applies the real threshold
 # for every site, enough for the geographic model's coarse grid
 LATITUDE, LONGITUDE = 6.76, -74.21
 BATCH_SIZE = 100  # recordings written to disk and analyzed together
+CHECKPOINT_SIZE = 500  # recordings analyzed between two writes to S3
 
 PREFIX = "detections/"
 DETECTIONS_FILE = "detections.parquet"
@@ -298,35 +300,56 @@ def run(settings: Settings) -> dict[str, int]:
     if not pending:
         return {"analyzed": 0, "failed": 0, "detections": 0}
 
-    found, failed = {}, {}
-    with tempfile.TemporaryDirectory() as folder:
-        for start in range(0, len(pending), BATCH_SIZE):
-            batch = pending[start : start + BATCH_SIZE]
-            paths = []
-            for recording in batch:
-                path = Path(folder) / recording["file_name"]
-                body = s3.get_object(Bucket=settings.s3_bucket, Key=recording["s3_key"])
-                path.write_bytes(body["Body"].read())
-                paths.append(path)
-            batch_found, batch_failed = detect(paths)
-            found.update(batch_found)
-            failed.update(batch_failed)
-            for path in paths:
-                path.unlink()
-            log.info("Analyzed %d of %d recordings", start + len(batch), len(pending))
-
+    # By partition, so each checkpoint rewrites few files
+    pending.sort(key=lambda r: (r["site_code"], r["recorded_at"], r["file_name"]))
     geo = geo_scores(birdnet_week(r["recorded_at"]) for r in pending)
-    tables = build_tables(pending, found, failed, geo, datetime.now(UTC), kept)
-    for key, table in tables.items():
-        put_parquet(s3, settings.s3_bucket, key, table)
-        log.info("Wrote %d rows to s3://%s/%s", table.num_rows, settings.s3_bucket, key)
-    counts = {
-        "analyzed": len(pending) - len(failed),
-        "failed": len(failed),
-        "detections": sum(len(found.get(r["file_name"], [])) for r in pending),
-    }
-    for name in failed:
-        log.warning("Failed %s: %s", name, failed[name])
+    counts = {"analyzed": 0, "failed": 0, "detections": 0}
+    with tempfile.TemporaryDirectory() as folder:
+        for start in range(0, len(pending), CHECKPOINT_SIZE):
+            part = pending[start : start + CHECKPOINT_SIZE]
+            found, failed = {}, {}
+            for batch_start in range(0, len(part), BATCH_SIZE):
+                batch = part[batch_start : batch_start + BATCH_SIZE]
+                paths = []
+                for recording in batch:
+                    path = Path(folder) / recording["file_name"]
+                    body = s3.get_object(
+                        Bucket=settings.s3_bucket, Key=recording["s3_key"]
+                    )
+                    path.write_bytes(body["Body"].read())
+                    paths.append(path)
+                batch_found, batch_failed = detect(paths)
+                found.update(batch_found)
+                failed.update(batch_failed)
+                for path in paths:
+                    path.unlink()
+
+            tables = build_tables(part, found, failed, geo, datetime.now(UTC), kept)
+            for key, table in tables.items():
+                put_parquet(s3, settings.s3_bucket, key, table)
+            # The partitions just written now hold every row the next
+            # checkpoint must keep
+            for key in tables:
+                prefix = key.rsplit("/", 1)[0] + "/"
+                kept[prefix] = (
+                    tables[prefix + RECORDINGS_FILE].to_pylist(),
+                    tables[prefix + DETECTIONS_FILE].to_pylist(),
+                )
+            for name in failed:
+                log.warning("Failed %s: %s", name, failed[name])
+            counts["analyzed"] += len(part) - len(failed)
+            counts["failed"] += len(failed)
+            counts["detections"] += sum(
+                len(found.get(r["file_name"], []))
+                for r in part
+                if r["file_name"] not in failed
+            )
+            log.info(
+                "Analyzed %d of %d recordings (%d partitions written)",
+                start + len(part),
+                len(pending),
+                len(tables) // 2,
+            )
     return counts
 
 
