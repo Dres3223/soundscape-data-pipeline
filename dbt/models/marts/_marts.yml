@@ -116,8 +116,9 @@ models:
     description: >
       Per site, period of the day and species, in how many usable recordings
       BirdNET detected the species (both flags of stg_bird_detections). A naive
-      detection rate, unvalidated: not an abundance and not corrected for
-      missed or false detections.
+      detection rate: not an abundance and not corrected for missed or false
+      detections. Against published labels about 8 in 10 of these species are
+      right, but only 1 in 7 labeled species is found (docs/validation.md).
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

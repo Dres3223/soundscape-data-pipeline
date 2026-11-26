@@ -5,7 +5,10 @@ Informatics* 61:101236, doi:10.1016/j.ecoinf.2021.101236) through the
 [`birdnet`](https://pypi.org/project/birdnet/) package on every recording.
 BirdNET splits each minute into 3-second segments and gives each of 6,522
 classes a score from 0 to 1. **The scores are not probabilities, and these
-detections are automatic and unvalidated** until P1PDPS-39.
+detections are automatic.** Compared with published labels at El Silencio,
+at the thresholds below about 8 in 10 species detected in a recording are
+right, but only about 1 in 7 labeled species is found
+([validation.md](validation.md)).
 
 ## Files (S3)
 
@@ -46,8 +49,11 @@ analyzed again has its detections replaced, never duplicated.
 dbt decides, with the thresholds in `dbt/seeds/detection_thresholds.csv`, so
 they change without running BirdNET again:
 
-- `is_confident`: `confidence ≥ 0.5`, a common default.
-- `is_expected_here`: `geo_score ≥ 0.03`, the geographic model's default.
+- `is_confident`: `confidence ≥ 0.5`: per recording, precision 0.80–0.90
+  and recall 0.14 in [validation.md](validation.md), which explains the
+  choice.
+- `is_expected_here`: `geo_score ≥ 0.03`, the geographic model's default;
+  in the validation it removed errors and no correct detection.
 
 `marts.mart_species_by_site_period` keeps only detections with both flags, in
 recordings without a quality flag (`is_usable`, see
@@ -85,8 +91,9 @@ recordings (15–20). Made with `scripts/birdnet_coverage.py`.
   are listed for the reserve: Spectacled Owl (0.029), Striped Owl (0.022),
   Red-and-green Macaw (0.029), Royal Flycatcher (0.024) and *S. turdina*.
   With 0.02, the value used by Funosas et al. (2026, *Ecological Indicators*
-  182:114550), only *S. turdina* would. P1PDPS-39 sets the threshold with
-  data.
+  182:114550), only *S. turdina* would. In the validation the 0.03 filter
+  lost no correct detection, so it stays ([validation.md](validation.md)); the
+  owls are not tested there.
 
 ## Speed
 
@@ -98,10 +105,12 @@ Mac, take longer.
 
 ## Limits
 
-- Unvalidated: P1PDPS-39 compares them with the expert-style labels of El
-  Silencio Multi-Taxonomic and calibrates the thresholds.
+- Checked against published labels, not by experts, and on other sites:
+  see the limits in [validation.md](validation.md). BirdNET misses most birds
+  there (recall 0.14 at the chosen thresholds).
 - `detection_rate` is a naive share of recordings: not an abundance, and not
-  corrected for missed or false detections.
+  corrected for missed or false detections; with such low recall it greatly
+  undercounts how often a species is present.
 - BirdNET V2.4 was trained mostly on focal recordings from the Americas and
   Europe; tropical soundscapes are harder, and insects or frogs can be
   mistaken for birds.

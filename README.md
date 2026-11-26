@@ -156,10 +156,14 @@ Columns, types and units: [docs/features_schema.md](docs/features_schema.md).
 ```bash
 uv run python -m soundscape.detections   # bird species with BirdNET, to S3 as Parquet
 ```
-Automatic, unvalidated detections per 3-second segment, in
+Automatic detections per 3-second segment, in
 `s3://soundscape/detections/site=<site>/month=<YYYY-MM>/`; the first run
 downloads the BirdNET models (~90 MB). Details and limits:
-[docs/detections_schema.md](docs/detections_schema.md).
+[docs/detections_schema.md](docs/detections_schema.md). Against the published
+labels of El Silencio, about 8 in 10 species detected in a recording are
+right and 1 in 7 labeled species is found:
+[docs/validation.md](docs/validation.md), reproduced with
+`uv run python -m soundscape.validation`.
 
 ### 7. Load features into Postgres
 ```bash

@@ -62,10 +62,11 @@ seeds:
 
   - name: detection_thresholds
     description: >
-      Thresholds for BirdNET detections: the BirdNET-Analyzer defaults for now
-      (0.5 confidence is a common choice; 0.03 is the geographic model's
-      default), to be calibrated in P1PDPS-39. Change a value and rerun dbt
-      build, BirdNET does not run again.
+      Thresholds for BirdNET detections, set from the comparison with the
+      published labels of El Silencio (docs/validation.md): confidence 0.5
+      gives precision 0.80-0.90 and recall 0.14 per recording; the geographic
+      filter at 0.03 removed errors and no correct detection. Change a value
+      and rerun dbt build, BirdNET does not run again.
     config:
       column_types:
         flag: text

@@ -2,7 +2,8 @@
 -- recordings BirdNET detected the species. Only detections that pass both
 -- flags of stg_bird_detections count, and only recordings without a quality
 -- flag (stg_audio_features.is_usable). A naive detection rate: it does not
--- correct for missed or false detections, and is unvalidated until P1PDPS-39.
+-- correct for missed or false detections. Precision 0.80-0.90 and recall 0.14
+-- against published labels (docs/validation.md).
 with analyzed as (
 
     select

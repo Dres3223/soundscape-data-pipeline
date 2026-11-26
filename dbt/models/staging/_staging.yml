@@ -188,8 +188,8 @@ models:
   - name: stg_bird_detections
     description: >
       BirdNET V2.4 detections with the period of the day and two flags from the
-      detection_thresholds seed. Automatic and unvalidated; see
-      docs/detections_schema.md.
+      detection_thresholds seed. Automatic; how often they agree with
+      published labels: docs/validation.md.
     columns:
       - name: recording_id
         data_tests: [not_null]

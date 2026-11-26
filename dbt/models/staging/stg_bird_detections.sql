@@ -1,6 +1,7 @@
 -- One row per BirdNET detection (recording, 3-second segment, species), with
 -- the period of the day and two flags set by the detection_thresholds seed.
--- Unvalidated: BirdNET scores are not probabilities (docs/detections_schema.md).
+-- BirdNET scores are not probabilities (docs/detections_schema.md); agreement
+-- with published labels: docs/validation.md.
 with detections as (
 
     select * from {{ source('raw', 'bird_detections') }}
