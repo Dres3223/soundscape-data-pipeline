@@ -6,6 +6,9 @@ Run only the fast tests with: uv run pytest -m "not integration"
 """
 
 import io
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime
 
 import numpy as np
@@ -250,6 +253,27 @@ def test_features_in_parallel_and_in_chunks_fill_every_partition(settings, monke
     key = "features/site=T01/month=2023-04/features.parquet"
     body = s3.get_object(Bucket=TEST_BUCKET, Key=key)["Body"]
     assert pq.read_table(io.BytesIO(body.read())).num_rows == 2
+
+
+def test_features_in_parallel_from_the_command_line(settings):
+    # As `make run` and the CI do: the module itself is then __main__
+    ingest.run(settings)
+    env = os.environ | {
+        "POSTGRES_DB": TEST_DB,
+        "S3_BUCKET": TEST_BUCKET,
+        "FEATURES_WORKERS": "2",
+    }
+
+    done = subprocess.run(
+        [sys.executable, "-m", "soundscape.features"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert len(object_keys(settings, "features/site=")) == len(FILE_NAMES)
 
 
 def test_features_keep_finished_chunks_when_a_run_stops(settings, monkeypatch):

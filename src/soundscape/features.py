@@ -382,6 +382,10 @@ def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
         if workers > 1
         else nullcontext()
     )
+    # Imported by module name: under `python -m soundscape.features` this file
+    # is __main__, which the workers cannot see (parent_main_hidden)
+    from soundscape.features import analyze as analyze_by_name
+
     results, failures = [], []
     with parent_main_hidden(), pool:
         mapper = pool.map if workers > 1 else map
@@ -394,7 +398,9 @@ def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
             chunk_results = list(
                 zip(
                     chunk,
-                    mapper(analyze, bodies, repeat(sample_rate), repeat(n_mfcc)),
+                    mapper(
+                        analyze_by_name, bodies, repeat(sample_rate), repeat(n_mfcc)
+                    ),
                     strict=True,
                 )
             )
