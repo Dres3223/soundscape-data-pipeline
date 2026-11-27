@@ -10,13 +10,13 @@
 | File | Use |
 |---|---|
 | `train.csv`, `taxonomy.csv` | Metadata, in full |
-| `train_soundscapes/` | Subset of up to 2 GB, spread across dates and hours |
-| `train_audio/` | Not downloaded (reserved for Project 3) |
+| `train_soundscapes/` | All 9,726 recordings, 4.3 GB (`scripts/download_all.sh`; first a subset of 2 GB) |
+| `train_audio/` | Not kept: `download_all.sh` skips it as the archive streams in (reserved for Project 3) |
 
 ## Disk budget (12.45 GB free at start)
 | Use | Maximum |
 |---|---|
-| BirdCLEF soundscapes | 2 GB |
+| BirdCLEF soundscapes | 4.3 GB, plus 4.5 GB as a copy in S3 (Docker volume) |
 | Metadata | < 50 MB |
 | Xeno-canto recordings | 500 MB (deleted after feature extraction) |
 | Processed data | 200 MB |

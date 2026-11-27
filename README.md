@@ -62,11 +62,13 @@ Solid lines and boxes are built; dashed ones are planned.
 
 ## What these results can and cannot say
 
-So far this pipeline computes generic acoustic measurements on a subset of the
-data. Treat them as exploration:
+The pipeline processes all 9,726 BirdCLEF 2025 soundscape recordings (56
+sites). Treat the results as exploration:
 
-- **It does not identify species or sound sources.** A higher level or centroid
-  at some hour may come from animals, rain, wind or the equipment.
+- **Acoustic measures do not say what made a sound.** A higher level or
+  centroid at some hour may come from animals, rain, wind or the equipment.
+  Species come only from BirdNET's automatic detections, which miss most
+  birds ([docs/validation.md](docs/validation.md)).
 - **Levels are not calibrated.** Compare them within a site, not between sites.
 - **Time and periods are assumptions.** Hours assume the file names use local
   time (UTC-5), and the periods of the day are a working choice.
@@ -108,7 +110,13 @@ uv run bash scripts/download_sample.sh   # 16 recordings (~8 MB) for local devel
 # Optional: every recording of some sites (~178 each), so the marts can
 # compare periods of the day within a site
 uv run bash scripts/download_sample.sh H02 H24 O203 H85   # ~330 MB
+# Or all 9,726 recordings (~4.3 GB), in one request (~15 min)
+bash scripts/download_all.sh
 ```
+Kaggle limits single-file downloads: after a few hundred it allows about 32
+every 30 minutes, so `download_sample.sh` would take days for the full set.
+`download_all.sh` streams the whole competition archive (12.4 GB) and keeps
+only the soundscapes, without storing the archive.
 
 ### 4. Start the services
 ```bash
@@ -196,6 +204,23 @@ retrying each task twice. In http://localhost:8080 turn the DAG on (or use
 *Trigger*), then open a run to see each task's state and logs; the `load`
 log reports the inserted, updated and unchanged counts. *Clear* re-runs a
 date safely: every stage is idempotent.
+
+The full dataset, measured in Docker on an Apple M1 Pro (10 cores, 8 GB for
+Docker), with 9,003 recordings new to a database that had 723:
+
+| Task | Time | Result |
+|---|---|---|
+| `ingest` | 2 min | 9,003 recordings uploaded and registered |
+| `detections` | 38 min | 0 failed; 134,144 BirdNET scores ≥ 0.1 |
+| `features` | 1 h 55 min | 0 failed (4 processes, ~0.77 s per recording) |
+| `load` | 9 s | 9,726 rows of features; detections replaced, not duplicated |
+| `dbt build` | 10 s | 89 models and tests pass |
+
+`features` and `detections` run at the same time, so a full run takes about
+2 hours. Afterwards 8,890 recordings (91 %) are usable; the quality flags
+exclude 836, mostly for low-frequency noise. 6,666 detections pass both
+BirdNET thresholds, 197 species. Postgres holds 75 MB; the audio takes 4.5 GB
+in S3, on top of the 4.3 GB local copy.
 
 ### 10. Verify
 ```bash

@@ -101,7 +101,9 @@ On an Apple M1 Pro (10 cores) with the LiteRT backend, BirdNET takes
 **0.11 s per one-minute recording** (two batches of 100 random recordings:
 0.107 s each). The 9,726 BirdCLEF 2025 `train_soundscapes` would take
 about 18 minutes, plus reading them from S3; slower machines, or Docker on a
-Mac, take longer.
+Mac, take longer. In Airflow, in Docker on the same Mac and while `features`
+used 4 cores, the 9,003 recordings new to the full run took 38 minutes
+(0.25 s each), with no failure.
 
 ## Limits
 
