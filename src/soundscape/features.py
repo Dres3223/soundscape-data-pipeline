@@ -25,11 +25,12 @@ the next one carries on from there.
 import io
 import logging
 import multiprocessing
+import sys
 import warnings
 from collections import defaultdict
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import repeat
@@ -315,6 +316,29 @@ def build_tables(
     return tables, pa.Table.from_pylist(failed, schema=FAILED_SCHEMA)
 
 
+@contextmanager
+def parent_main_hidden():
+    """Keep spawned workers from running the parent's main script again.
+
+    spawn starts each worker by re-running the parent's __main__. Inside an
+    Airflow task that is the `airflow` command, which cannot start there (a
+    task has no access to Airflow's database) and kills every worker. The
+    workers only need this module, which they import by name, so while the
+    pool runs __main__ shows neither its file nor its module name.
+    """
+    main = sys.modules["__main__"]
+    missing = object()
+    file = main.__dict__.pop("__file__", missing)
+    spec = getattr(main, "__spec__", None)
+    main.__spec__ = None
+    try:
+        yield
+    finally:
+        main.__spec__ = spec
+        if file is not missing:
+            main.__file__ = file
+
+
 def put_parquet(s3, bucket: str, key: str, table: pa.Table) -> None:
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
@@ -351,14 +375,15 @@ def run(settings: Settings) -> list[tuple[dict, FeatureResult]]:
     pending.sort(key=lambda r: (r["site_code"], r["recorded_at"], r["file_name"]))
     kept = {row["sha256"]: row for row in kept_rows}
     workers = min(settings.features_workers, max(1, len(pending)))
-    # spawn: the same on macOS and Linux, and safe inside Airflow's process
+    # spawn: the same on macOS and Linux; parent_main_hidden makes it work
+    # inside an Airflow task
     pool = (
         ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
         if workers > 1
         else nullcontext()
     )
     results, failures = [], []
-    with pool:
+    with parent_main_hidden(), pool:
         mapper = pool.map if workers > 1 else map
         for start in range(0, len(pending), CHUNK_SIZE):
             chunk = pending[start : start + CHUNK_SIZE]

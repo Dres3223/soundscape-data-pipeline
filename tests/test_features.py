@@ -1,10 +1,16 @@
 import io
+import multiprocessing
+import os
+import sys
+import types
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 import numpy as np
 import pytest
 import soundfile as sf
 
-from soundscape.features import analyze
+from soundscape.features import analyze, parent_main_hidden
 
 SAMPLE_RATE = 32000
 
@@ -126,3 +132,33 @@ def test_rain_band_is_steadier_for_noise_than_for_a_short_call():
     bursty = analyze(encode(call, "WAV"), SAMPLE_RATE, 20).features
 
     assert steady["rain_band_snr"] > bursty["rain_band_snr"]
+
+
+@pytest.fixture
+def main_that_cannot_start(tmp_path, monkeypatch):
+    """A __main__ script that fails on import, like `airflow` inside a task."""
+    script = tmp_path / "main_script.py"
+    script.write_text("raise RuntimeError('this main cannot start here')\n")
+    main = types.ModuleType("__main__")
+    main.__file__ = str(script)
+    main.__spec__ = None
+    monkeypatch.setitem(sys.modules, "__main__", main)
+    return main
+
+
+def spawn_one_worker() -> int:
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(1, mp_context=context) as pool:
+        return pool.submit(os.getpid).result(timeout=60)
+
+
+def test_spawned_workers_die_when_the_main_script_cannot_start(main_that_cannot_start):
+    with pytest.raises(BrokenProcessPool):
+        spawn_one_worker()
+
+
+def test_spawned_workers_start_with_the_parent_main_hidden(main_that_cannot_start):
+    with parent_main_hidden():
+        assert spawn_one_worker() != os.getpid()
+
+    assert main_that_cannot_start.__file__.endswith("main_script.py")
