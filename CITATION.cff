@@ -1,0 +1,83 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it as below. If you use the derived
+  data, cite the data release (data-v1.0.0) and the sources in its README.
+type: software
+title: "Soundscape Data Pipeline: El Silencio Nature Reserve"
+abstract: >-
+  Data pipeline that turns one-minute field recordings from El Silencio
+  Nature Reserve (Colombia) into acoustic indices, quality flags and BirdNET
+  bird detections, orchestrated with Airflow and modelled with dbt.
+authors:
+  - family-names: Martínez
+    given-names: Rodrigo
+    orcid: "https://orcid.org/0009-0006-1482-6112"
+repository-code: "https://github.com/Dres3223/soundscape-data-pipeline"
+license: MIT
+version: 1.0.0
+date-released: "2026-11-27"
+keywords:
+  - passive acoustic monitoring
+  - soundscape ecology
+  - acoustic indices
+  - BirdNET
+  - data engineering
+references:
+  - type: dataset
+    title: >-
+      El Silencio Soundscapes: A dataset for leveraging unlabelled data in
+      machine learning models for passive acoustic monitoring
+    authors:
+      - family-names: Cañas
+        given-names: Juan Sebastián
+      - family-names: Toro Gómez
+        given-names: Maria Paula
+      - family-names: Benavides-Lopez
+        given-names: Jose Luis
+      - family-names: Rodriguez-Buritica
+        given-names: Susana
+      - family-names: Ulloa
+        given-names: Juan Sebastian
+      - family-names: Caycedo-Rosales
+        given-names: Paula
+    doi: 10.5281/zenodo.17122738
+    year: 2025
+    publisher:
+      name: Zenodo
+  - type: dataset
+    title: >-
+      El Silencio Multi-Taxonomic: A passive acoustic monitoring dataset for
+      multi-taxonomic identification in the Middle Magdalena, Colombia
+    authors:
+      - family-names: Cañas
+        given-names: Juan Sebastián
+      - family-names: Toro Gómez
+        given-names: Maria Paula
+      - family-names: Benavides-Lopez
+        given-names: Jose Luis
+      - family-names: Rodriguez-Buritica
+        given-names: Susana
+      - family-names: Ulloa
+        given-names: Juan Sebastian
+      - family-names: Caycedo-Rosales
+        given-names: Paula
+    doi: 10.5281/zenodo.17064353
+    year: 2025
+    publisher:
+      name: Zenodo
+  - type: article
+    title: "BirdNET: A deep learning solution for avian diversity monitoring"
+    authors:
+      - family-names: Kahl
+        given-names: Stefan
+      - family-names: Wood
+        given-names: Connor M.
+      - family-names: Eibl
+        given-names: Maximilian
+      - family-names: Klinck
+        given-names: Holger
+    journal: Ecological Informatics
+    volume: 61
+    start: 101236
+    year: 2021
+    doi: 10.1016/j.ecoinf.2021.101236

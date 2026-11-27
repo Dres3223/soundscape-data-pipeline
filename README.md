@@ -284,6 +284,25 @@ Inside Docker, point the settings at reachable hosts (for example
 `-e POSTGRES_HOST=... -e S3_ENDPOINT_URL=...`) and mount the recordings for
 `ingest` (`-v ...:/data:ro -e INGEST_SOURCE_DIR=/data/...`).
 
+## Derived data
+
+`make release` exports what the pipeline computes, never the audio, as two
+datasets in `data/release/`, each also as a zip. They are published as
+GitHub releases tagged `data-v<version>`
+([data-v1.0.0](https://github.com/Dres3223/soundscape-data-pipeline/releases/tag/data-v1.0.0)):
+
+| Folder | Content | Licence |
+|---|---|---|
+| `indices/` | Recordings, quality flags, acoustic indices, summary per site and period | CC BY 4.0 |
+| `detections/` | BirdNET detections, species per site and period, validation tables | CC BY-NC-SA 4.0 |
+
+Each has a README with the data dictionary, method, sources to cite and
+limits ([templates](docs/release/)), its licence and `SHA256SUMS`. The
+export is reproducible: the same database gives the same bytes, zips
+included. How to publish a new version:
+[docs/release/PUBLISHING.md](docs/release/PUBLISHING.md). To cite the code,
+see [CITATION.cff](CITATION.cff).
+
 ## License
 The code is released under the [MIT](LICENSE) license.
 

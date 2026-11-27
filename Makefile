@@ -21,7 +21,7 @@ CLOUD_COMPOSE := CLOUD_ENV=$(ENV) CLOUD_S3_ENDPOINT_URL=$(CLOUD_S3_ENDPOINT) \
 	docker compose -f docker-compose.yml -f docker-compose.cloud.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help setup data up down run test test-dags lint emulator emulator-down \
+.PHONY: help setup data up down run release test test-dags lint emulator emulator-down \
 	infra-init infra-plan infra-apply infra-check infra-destroy infra-test infra-cycle \
 	sync-storage airflow-cloud airflow-local
 
@@ -52,6 +52,11 @@ run: ## Run the pipeline once: ingest, features, detections, load, then dbt buil
 	uv run python -m soundscape.load
 	$(DBT) deps $(DBT_ARGS)
 	$(DBT) build $(DBT_ARGS)
+
+release: ## Export the derived datasets to data/release (after `make run`)
+	uv run python -m soundscape.export
+	cd data/release/indices && shasum -a 256 -c --quiet SHA256SUMS
+	cd data/release/detections && shasum -a 256 -c --quiet SHA256SUMS
 
 test: ## Run the tests with coverage (integration tests need `make up`)
 	uv run pytest $(PYTEST_ARGS)

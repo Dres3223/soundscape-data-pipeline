@@ -89,10 +89,11 @@ jobs:
           path: ~/.local/share/birdnet
           key: birdnet-${{ hashFiles('uv.lock') }}
           restore-keys: birdnet-
-      - name: "End to end: synthetic recordings → ingest → features → detections → load → dbt build"
+      - name: "End to end: synthetic recordings → ingest → features → detections → load → dbt build → release"
         run: |
           uv run python scripts/make_synthetic_recordings.py
           make run
+          make release
 
   dags:
     name: Airflow DAGs load
