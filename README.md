@@ -2,9 +2,13 @@
 
 [![CI](https://github.com/Dres3223/soundscape-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Dres3223/soundscape-data-pipeline/actions/workflows/ci.yml)
 
-Data pipeline that processes field recordings from El Silencio Nature Reserve (Colombia).
+Data pipeline that turns field recordings from El Silencio Nature Reserve
+(Colombia) into acoustic indices, audio quality flags and automatic bird
+detections with BirdNET: from raw audio to tested tables, a dashboard and a
+published derived dataset.
 
-> Work in progress. Data source and decisions: [docs/data_source.md](docs/data_source.md)
+> The pipeline is complete and runs on the full dataset (9,726 recordings).
+> Data source and decisions: [docs/data_source.md](docs/data_source.md)
 
 ## Architecture
 
@@ -17,33 +21,39 @@ flowchart LR
 
     subgraph s3["Object storage: S3 API (RustFS locally, AWS S3 later)"]
         raw[("raw/<br/>audio .ogg")]
-        parquet[("features/<br/>Parquet")]
+        featparquet[("features/<br/>Parquet")]
+        detparquet[("detections/<br/>Parquet")]
     end
 
     subgraph pg["PostgreSQL"]
         recordings[("raw.recordings")]
         audiofeatures[("raw.audio_features")]
+        birddetections[("raw.bird_detections<br/>raw.detection_recordings")]
         staging[("staging")]
         marts[("marts")]
     end
 
     ingest["ingest<br/>Python"]
-    features["features<br/>librosa"]
+    features["features<br/>librosa + scikit-maad"]
+    detections["detections<br/>BirdNET"]
     load["load<br/>upsert"]
     dbt["dbt<br/>models + tests"]
     dashboard["Dashboard<br/>Streamlit"]
+    release["release<br/>CSV + README"]
     airflow{{"Apache Airflow"}}
 
     kaggle --> ingest
     xenocanto -.-> ingest
-    ingest --> raw
-    ingest --> recordings
-    raw --> features --> parquet
-    recordings --> features
-    parquet --> load --> audiofeatures
-    recordings & audiofeatures --> dbt
+    ingest --> raw & recordings
+    raw & recordings --> features & detections
+    features --> featparquet
+    detections --> detparquet
+    featparquet & detparquet --> load
+    load --> audiofeatures & birddetections
+    recordings & audiofeatures & birddetections --> dbt
     dbt --> staging --> marts --> dashboard
-    airflow -- orchestrates --> ingest & features & load
+    staging & marts --> release
+    airflow -- orchestrates --> ingest & features & detections & load
     airflow -.-> dbt
 
     classDef planned stroke-dasharray: 5 5, color:#888, stroke:#888
@@ -54,11 +64,13 @@ Solid lines and boxes are built; dashed ones are planned.
 | Stage | Status | What it does |
 |---|---|---|
 | Ingest | ✅ Built | Uploads raw audio to S3 and registers its metadata in Postgres (idempotent by SHA-256) |
-| Features | ✅ Built | Extracts audio features with librosa and writes Parquet partitioned by site and month |
-| Load | ✅ Built | Upserts features from Parquet into `raw.audio_features` in Postgres |
-| dbt | ✅ Built | Staging views and a mart per site and period of the day, with 40 data tests |
+| Features | ✅ Built | Audio features (librosa), ecoacoustic indices (scikit-maad) and quality measures, in parallel; Parquet partitioned by site and month |
+| Detections | ✅ Built | Bird species with BirdNET V2.4 per 3-second segment, checked against published labels ([validation](docs/validation.md)); Parquet |
+| Load | ✅ Built | Upserts features and detections from Parquet into Postgres |
+| dbt | ✅ Built | Staging views with quality flags and detection thresholds (seeds), 2 marts per site and period of the day, 81 data tests |
 | Dashboard | ✅ Built | Streamlit app over the mart: loudness by site and period, one site through the day |
 | Airflow | ✅ Built | Runs ingest → features and detections → load daily, with retries; re-running a date duplicates nothing |
+| Release | ✅ Built | `make release`: derived datasets as CSV with data dictionary, licence and checksums ([below](#derived-data)) |
 
 ## What these results can and cannot say
 
@@ -128,7 +140,7 @@ docker compose ps       # every service should be "healthy"
 
 | Service | URL | Purpose |
 |---|---|---|
-| PostgreSQL 18 | `localhost:5432` | Recording metadata and audio features |
+| PostgreSQL 18 | `localhost:5432` | Recording metadata, audio features, detections and dbt models |
 | RustFS (S3 API) | `http://localhost:9000` | Raw audio files (S3-compatible object storage) |
 | RustFS console | http://localhost:9001/rustfs/console/ | Browse buckets in the browser |
 | Airflow 3.3 | http://localhost:8080 | Orchestration UI; user `admin`, password `AIRFLOW_ADMIN_PASSWORD` from `.env` |
@@ -156,8 +168,13 @@ and their metadata in the `raw.recordings` table.
 ```bash
 uv run python -m soundscape.features   # write features to S3 as Parquet
 ```
-One row per recording (MFCC, spectral centroid and bandwidth, RMS,
-zero-crossing rate), partitioned in `s3://soundscape/features/site=<site>/month=<YYYY-MM>/`.
+One row per recording, partitioned in
+`s3://soundscape/features/site=<site>/month=<YYYY-MM>/`: MFCC, spectral
+centroid and bandwidth, RMS and zero-crossing rate (librosa); ecoacoustic
+indices (scikit-maad: ACI, ADI, AEI, BI, NDSI, entropies, noise and SNR); and
+quality measures (rain band, low-frequency energy, clipping, dropouts).
+Recordings are analyzed in parallel (`FEATURES_WORKERS`, default: cores − 2)
+and written every 250, so a stopped run carries on where it left off.
 Recordings that cannot be decoded go to `features_failed/`.
 Columns, types and units: [docs/features_schema.md](docs/features_schema.md).
 
@@ -173,13 +190,15 @@ right and 1 in 7 labeled species is found:
 [docs/validation.md](docs/validation.md), reproduced with
 `uv run python -m soundscape.validation`.
 
-### 7. Load features into Postgres
+### 7. Load features and detections into Postgres
 ```bash
-uv run python -m soundscape.load   # upsert the Parquet files into raw.audio_features
+uv run python -m soundscape.load   # upsert the Parquet files into Postgres
 ```
-One transaction per run: new recordings are inserted, re-extracted ones
-(newer `extracted_at`) are updated, the rest are left unchanged; the log
-reports each count. Features of a recording missing from `raw.recordings`
+Features go to `raw.audio_features` in one transaction: new recordings are
+inserted, re-extracted ones (newer `extracted_at`) are updated, the rest are
+left unchanged; the log reports each count. Detections go to
+`raw.detection_recordings` and `raw.bird_detections`: a recording analyzed
+again has its detections replaced, never duplicated. Features of a recording missing from `raw.recordings`
 are rejected by a foreign key, and then nothing is loaded.
 
 ### 8. Model the data with dbt
@@ -187,8 +206,10 @@ are rejected by a foreign key, and then nothing is loaded.
 uv run --env-file .env --group dbt dbt deps  --project-dir dbt --profiles-dir dbt
 uv run --env-file .env --group dbt dbt build --project-dir dbt --profiles-dir dbt
 ```
-`dbt build` loads the seed, builds the staging views and the mart, and runs
-every data test, skipping whatever depends on a failed test. Models, periods
+`dbt build` loads the 3 seeds (periods of the day, quality and detection
+thresholds), builds the staging views and the 2 marts, and runs every data
+test, skipping whatever depends on a failed test. The marts leave out
+recordings with a quality flag ([docs/quality_review.md](docs/quality_review.md)). Models, periods
 of the day and tests: [dbt/README.md](dbt/README.md).
 
 ![dbt lineage graph](docs/img/dbt_lineage.png)
@@ -278,7 +299,7 @@ build, non-root user): about **1.2 GB on disk, ~280 MB to download**, against
 3.9 GB for the Airflow image. Most of it is numba/llvmlite, scipy and pyarrow.
 
 ```bash
-docker run --env-file .env ghcr.io/dres3223/soundscape-data-pipeline ingest   # or features, load
+docker run --env-file .env ghcr.io/dres3223/soundscape-data-pipeline ingest   # or features, detections, load
 ```
 Inside Docker, point the settings at reachable hosts (for example
 `-e POSTGRES_HOST=... -e S3_ENDPOINT_URL=...`) and mount the recordings for
@@ -306,4 +327,16 @@ see [CITATION.cff](CITATION.cff).
 ## License
 The code is released under the [MIT](LICENSE) license.
 
-The data is **not** part of this repository nor covered by that license: the BirdCLEF+ 2025 dataset keeps its own [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) license (non-commercial use, with attribution). The pipeline downloads it directly from Kaggle.
+Data is not covered by that license:
+
+- **Audio:** not in this repository. The pipeline downloads it from Kaggle,
+  where BirdCLEF+ 2025 is under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+  The same recordings are published as El Silencio Soundscapes
+  ([doi:10.5281/zenodo.17122738](https://doi.org/10.5281/zenodo.17122738))
+  under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the basis
+  for the derived data's licences.
+- **Derived from BirdNET** (its model weights are under CC BY-NC-SA 4.0):
+  the tables in `docs/` (`validation_curve.csv`, `validation_species.csv`,
+  `detections_coverage.csv`) and the detections release are under
+  [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+- **Acoustic indices and quality flags** (indices release): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
