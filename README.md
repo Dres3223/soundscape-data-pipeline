@@ -2,13 +2,44 @@
 
 [![CI](https://github.com/Dres3223/soundscape-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Dres3223/soundscape-data-pipeline/actions/workflows/ci.yml)
 
-Data pipeline that turns field recordings from El Silencio Nature Reserve
-(Colombia) into acoustic indices, audio quality flags and automatic bird
-detections with BirdNET: from raw audio to tested tables, a dashboard and a
-published derived dataset.
+**In short:** an end-to-end data pipeline that turns 9,726 one-minute field
+recordings from El Silencio Nature Reserve (Colombia) into acoustic indices,
+audio quality flags and automatic bird detections, loaded into tested tables,
+shown in a dashboard and published as an open dataset. Python, Airflow, dbt,
+PostgreSQL, S3-compatible storage, Docker, Terraform and GitHub Actions. The
+full dataset runs in about 2 hours with no failures, and the bird detections
+are checked against published labels.
 
-> The pipeline is complete and runs on the full dataset (9,726 recordings).
-> Data source and decisions: [docs/data_source.md](docs/data_source.md)
+![Dashboard: acoustic measures by site and period, then BirdNET species](docs/img/dashboard.gif)
+
+## The problem
+
+Passive acoustic monitoring leaves recorders in a forest for weeks: here, 56
+sites over 38 days of April–May 2023, 162 hours of audio. Nobody can listen to
+all of it. Ecologists want to know how the soundscape changes through the day
+and which birds call where, and they need numbers they can trust and
+reproduce.
+
+The data engineering problem is to turn 4.3 GB of raw audio into reliable
+tables: every step idempotent and incremental, every number traceable to its
+recording, failures visible instead of silent, and the whole thing
+reproducible on another machine with one command.
+
+## Results
+
+| | |
+|---|---|
+| Recordings processed | **9,726** from 56 sites, 0 failures |
+| Usable after quality control | **8,890** (91 %); 836 flagged for low-frequency noise, heavy rain or clipping |
+| BirdNET scores ≥ 0.1 | **145,617**; 6,666 pass both thresholds, **197 species** |
+| BirdNET against published labels | precision **0.80**, recall **0.14** per recording ([validation](docs/validation.md)) |
+| Full run (Docker on an M1 Pro) | **~2 h**: features 1 h 55 min with 4 processes, BirdNET 38 min, in parallel |
+| Tests | 93 pytest (unit, integration, end to end) + 81 dbt data tests, in CI |
+| Open dataset | [data-v1.0.0](https://github.com/Dres3223/soundscape-data-pipeline/releases/tag/data-v1.0.0): two reproducible zips with data dictionary and licences |
+
+The validation changed the story: BirdNET is usually right when it names a
+species (8 in 10) but finds only 1 in 7 of the species present. So the
+dashboard can say where a species was detected, not where it was absent.
 
 ## Architecture
 
@@ -72,238 +103,110 @@ Solid lines and boxes are built; dashed ones are planned.
 | Airflow | ✅ Built | Runs ingest → features and detections → load daily, with retries; re-running a date duplicates nothing |
 | Release | ✅ Built | `make release`: derived datasets as CSV with data dictionary, licence and checksums ([below](#derived-data)) |
 
-## What these results can and cannot say
+![dbt lineage graph](docs/img/dbt_lineage.png)
 
-The pipeline processes all 9,726 BirdCLEF 2025 soundscape recordings (56
-sites). Treat the results as exploration:
+## Stack
+
+| Layer | Tool | Why this one |
+|---|---|---|
+| Orchestration | Apache Airflow 3 (LocalExecutor) | Retries, timeouts and a visible history per task; no extra services |
+| Storage | S3 API: RustFS locally ([ADR 0001](docs/adr/0001-s3-compatible-storage.md)), AWS S3 by configuration | Same code locally and in the cloud |
+| Intermediate format | Parquet, partitioned by site and month | ~112 files of ~87 rows; by day it would be ~1,680 near-empty files |
+| Warehouse | PostgreSQL 18 | Upserts with keys, a read-only role for the dashboard |
+| Transformation | dbt (2 marts, 3 seeds, 81 tests) | Thresholds in seeds: change them without re-running the audio stages |
+| Audio | librosa, scikit-maad, BirdNET V2.4 | Standard features, ecoacoustic indices and a published bird model |
+| Dashboard | Streamlit + Altair | Reads only the marts |
+| Infrastructure | Terraform against the Moto AWS emulator | Real IAM permissions, no AWS account or cost |
+| Quality | pytest, ruff, pre-commit, GitHub Actions, image on GHCR | Each push runs every test and an end-to-end run on synthetic audio |
+
+## Technical decisions and why
+
+- **Idempotent by content.** A recording's key is the SHA-256 of its file:
+  ingesting twice does nothing, features are upserted, and a recording
+  analyzed again has its detections replaced, never duplicated. Clearing a
+  date in Airflow is always safe.
+- **Incremental and resumable.** Features and detections only analyze what is
+  new or outdated (a version number per calculation), and write every 250 or
+  500 recordings, so a run that stops halfway carries on from there.
+- **Thresholds are data, not code.** Quality and detection thresholds live in
+  dbt seeds. The BirdNET ones were chosen from the validation curve
+  (precision ≥ 0.8), not guessed, and anyone can pick another row and
+  rebuild in 10 seconds.
+- **Validate before publishing.** BirdNET was compared with published labels
+  from 747 annotated minutes; the result, including its low recall, is
+  written in the docs and shown in the dashboard.
+- **Change the unit of work when an API limits you.** Kaggle allows about 32
+  single-file downloads every 30 minutes, which meant days for the full set.
+  `scripts/download_all.sh` asks once for the whole archive (12.4 GB) and
+  extracts only the soundscapes as it streams in: 15 minutes, without storing
+  the archive.
+- **Cloud without a cloud account.** Terraform creates the bucket and a
+  least-privilege user on the Moto emulator; the same code targets AWS by
+  configuration.
+- **Reproducible releases.** `make release` gives the same bytes from the same
+  database (sorted tables, fixed number formats, zips with fixed dates), with
+  one licence per kind of data.
+
+## What I learned
+
+- **Multiprocessing depends on who is `__main__`.** `spawn` re-runs the
+  parent's main module in every worker. Inside an Airflow task that is the
+  `airflow` command, which cannot start there, so every worker died. Hiding
+  `__main__` fixed Airflow and broke `python -m`, where the module itself is
+  main; the CI's end-to-end run caught it before it mattered.
+- **Read what a library returns, not what you expect.** I assumed BirdNET
+  reported the files it could not read by position in my list; they are
+  positions in its own sorted, de-duplicated list, so the wrong files would
+  have been blamed. A test with a fake result now pins it down.
+- **A blank cell is a value too.** In a heat map, groups hidden for having
+  few recordings looked like data; they are now grey and labelled.
+- **Measure the model before using its numbers.** Without the validation, a
+  map of "where each bird lives" would have looked convincing and been mostly
+  wrong about absences.
+
+## What these results can and cannot say
 
 - **Acoustic measures do not say what made a sound.** A higher level or
   centroid at some hour may come from animals, rain, wind or the equipment.
-  Species come only from BirdNET's automatic detections, which miss most
-  birds ([docs/validation.md](docs/validation.md)).
+  Indices are context, not measures of biodiversity.
+- **Bird detections are automatic.** About 1 in 5 is wrong at the chosen
+  thresholds, and most birds present are missed: an absence means little.
 - **Levels are not calibrated.** Compare them within a site, not between sites.
-- **Time and periods are assumptions.** Hours assume the file names use local
-  time (UTC-5), and the periods of the day are a working choice.
-- **The coverage is limited.** The full dataset is 162 hours from 38 days of a
-  single season (April to May 2023).
+- **Time and periods are assumptions.** Hours assume local time (UTC-5), and
+  the periods of the day are a working choice.
+- **Out of scope:** confirming species without an expert; frogs, insects and
+  mammals (BirdNET is for birds); changes between seasons or years; population
+  trends or effects of restoration.
 
-## How to run
+## Next steps
 
-### 1. Prerequisites
-- [Docker](https://docs.docker.com/get-docker/) with Docker Compose
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- A Kaggle API token ([how to get one](https://www.kaggle.com/docs/api)) saved in
-  `~/.kaggle/access_token`, and the
-  [competition rules](https://www.kaggle.com/competitions/birdclef-2025/rules) accepted
-- `make` (included in macOS and Linux)
+- Review of the detections by an ornithologist of the region: the change that
+  would add the most value.
+- Compute everything from the original WAV files of El Silencio Soundscapes
+  (Zenodo) instead of Kaggle's compressed OGG copies.
+- Run `dbt build` as a task of the Airflow DAG (today it is run separately,
+  as in `make run`).
+- Deploy to a real AWS account: the Terraform and settings are ready.
+- Other taxa (frogs, insects) with models trained for them.
 
-### Quick start
-```bash
-make setup   # dependencies, git hooks, and .env with random secrets
-make data    # dataset metadata and the 16-recording sample from Kaggle
-make up      # build and start Postgres, RustFS, Airflow and the dashboard
-make run     # ingest → features → detections → load → dbt build
-```
-Then open the dashboard at http://localhost:8501. `make` alone lists every
-command (`make test`, `make lint`, `make down`...). The numbered steps below
-are what these commands run, one at a time.
+## Quick start
 
-### 2. Install dependencies
-```bash
-uv sync
-uv run pre-commit install   # enable the git hooks (once)
-```
-
-### 3. Download the data
-```bash
-uv run bash scripts/download_metadata.sh
-uv run bash scripts/list_files.sh
-uv run bash scripts/download_sample.sh   # 16 recordings (~8 MB) for local development
-# Optional: every recording of some sites (~178 each), so the marts can
-# compare periods of the day within a site
-uv run bash scripts/download_sample.sh H02 H24 O203 H85   # ~330 MB
-# Or all 9,726 recordings (~4.3 GB), in one request (~15 min)
-bash scripts/download_all.sh
-```
-Kaggle limits single-file downloads: after a few hundred it allows about 32
-every 30 minutes, so `download_sample.sh` would take days for the full set.
-`download_all.sh` streams the whole competition archive (12.4 GB) and keeps
-only the soundscapes, without storing the archive.
-
-### 4. Start the services
-```bash
-bash scripts/make_env.sh   # .env from .env.example, with random secrets
-docker compose build    # build the Airflow image (first time, ~1 min)
-docker compose up -d    # start PostgreSQL, RustFS, Airflow and the dashboard
-docker compose ps       # every service should be "healthy"
-```
-
-| Service | URL | Purpose |
-|---|---|---|
-| PostgreSQL 18 | `localhost:5432` | Recording metadata, audio features, detections and dbt models |
-| RustFS (S3 API) | `http://localhost:9000` | Raw audio files (S3-compatible object storage) |
-| RustFS console | http://localhost:9001/rustfs/console/ | Browse buckets in the browser |
-| Airflow 3.3 | http://localhost:8080 | Orchestration UI; user `admin`, password `AIRFLOW_ADMIN_PASSWORD` from `.env` |
-| Dashboard | http://localhost:8501 | Soundscape by site and period (after `dbt build`) |
-
-On the first `up`, two one-shot services prepare Airflow and then exit:
-`postgres-init` creates Airflow's metadata database and the dashboard's read-only role, and
-`airflow-init` migrates it and creates the `admin` user. Airflow reads DAGs
-from [`dags/`](dags/); `smoke_check` is a manual DAG that checks tasks can
-import the `soundscape` package. Code changes in `src/` apply without
-rebuilding; run `docker compose build` again only when dependencies change.
-
-Stop the services with `docker compose down`; data is kept in Docker volumes.
-Why RustFS instead of MinIO: [ADR 0001](docs/adr/0001-s3-compatible-storage.md).
-
-### 5. Run the ingestion
-```bash
-uv run python -m soundscape.ingest   # upload recordings to S3 and register them in Postgres
-```
-The ingestion is idempotent: re-running it skips recordings already registered
-(by SHA-256). Files land in `s3://soundscape/raw/<source>/site=<site>/date=<date>/`
-and their metadata in the `raw.recordings` table.
-
-### 6. Extract audio features
-```bash
-uv run python -m soundscape.features   # write features to S3 as Parquet
-```
-One row per recording, partitioned in
-`s3://soundscape/features/site=<site>/month=<YYYY-MM>/`: MFCC, spectral
-centroid and bandwidth, RMS and zero-crossing rate (librosa); ecoacoustic
-indices (scikit-maad: ACI, ADI, AEI, BI, NDSI, entropies, noise and SNR); and
-quality measures (rain band, low-frequency energy, clipping, dropouts).
-Recordings are analyzed in parallel (`FEATURES_WORKERS`, default: cores − 2)
-and written every 250, so a stopped run carries on where it left off.
-Recordings that cannot be decoded go to `features_failed/`.
-Columns, types and units: [docs/features_schema.md](docs/features_schema.md).
+Needs Docker, [uv](https://docs.astral.sh/uv/getting-started/installation/), `make`
+and a [Kaggle API token](https://www.kaggle.com/docs/api) with the
+[competition rules](https://www.kaggle.com/competitions/birdclef-2025/rules) accepted.
 
 ```bash
-uv run python -m soundscape.detections   # bird species with BirdNET, to S3 as Parquet
-```
-Automatic detections per 3-second segment, in
-`s3://soundscape/detections/site=<site>/month=<YYYY-MM>/`; the first run
-downloads the BirdNET models (~90 MB). Details and limits:
-[docs/detections_schema.md](docs/detections_schema.md). Against the published
-labels of El Silencio, about 8 in 10 species detected in a recording are
-right and 1 in 7 labeled species is found:
-[docs/validation.md](docs/validation.md), reproduced with
-`uv run python -m soundscape.validation`.
-
-### 7. Load features and detections into Postgres
-```bash
-uv run python -m soundscape.load   # upsert the Parquet files into Postgres
-```
-Features go to `raw.audio_features` in one transaction: new recordings are
-inserted, re-extracted ones (newer `extracted_at`) are updated, the rest are
-left unchanged; the log reports each count. Detections go to
-`raw.detection_recordings` and `raw.bird_detections`: a recording analyzed
-again has its detections replaced, never duplicated. Features of a recording missing from `raw.recordings`
-are rejected by a foreign key, and then nothing is loaded.
-
-### 8. Model the data with dbt
-```bash
-uv run --env-file .env --group dbt dbt deps  --project-dir dbt --profiles-dir dbt
-uv run --env-file .env --group dbt dbt build --project-dir dbt --profiles-dir dbt
-```
-`dbt build` loads the 3 seeds (periods of the day, quality and detection
-thresholds), builds the staging views and the 2 marts, and runs every data
-test, skipping whatever depends on a failed test. The marts leave out
-recordings with a quality flag ([docs/quality_review.md](docs/quality_review.md)). Models, periods
-of the day and tests: [dbt/README.md](dbt/README.md).
-
-![dbt lineage graph](docs/img/dbt_lineage.png)
-
-The dashboard at http://localhost:8501 reads the mart with a read-only role
-(`dashboard`, allowed to read `marts` only):
-
-![Soundscape dashboard](docs/img/dashboard.png)
-
-### 9. Or let Airflow run the whole pipeline
-Steps 5–7 are what the `soundscape_pipeline` DAG runs every day, in order,
-retrying each task twice. In http://localhost:8080 turn the DAG on (or use
-*Trigger*), then open a run to see each task's state and logs; the `load`
-log reports the inserted, updated and unchanged counts. *Clear* re-runs a
-date safely: every stage is idempotent.
-
-The full dataset, measured in Docker on an Apple M1 Pro (10 cores, 8 GB for
-Docker), with 9,003 recordings new to a database that had 723:
-
-| Task | Time | Result |
-|---|---|---|
-| `ingest` | 2 min | 9,003 recordings uploaded and registered |
-| `detections` | 38 min | 0 failed; 134,144 BirdNET scores ≥ 0.1 |
-| `features` | 1 h 55 min | 0 failed (4 processes, ~0.77 s per recording) |
-| `load` | 9 s | 9,726 rows of features; detections replaced, not duplicated |
-| `dbt build` | 10 s | 89 models and tests pass |
-
-`features` and `detections` run at the same time, so a full run takes about
-2 hours. Afterwards 8,890 recordings (91 %) are usable; the quality flags
-exclude 836, mostly for low-frequency noise. 6,666 detections pass both
-BirdNET thresholds, 197 species. Postgres holds 75 MB; the audio takes 4.5 GB
-in S3, on top of the 4.3 GB local copy.
-
-### 10. Verify
-```bash
-docker compose exec postgres psql -U soundscape -d soundscape \
-  -c "SELECT site_code, recorded_at, duration_s FROM raw.recordings ORDER BY recorded_at LIMIT 5;"
-uv run pytest                        # all tests, with a coverage report
-uv run pytest -m "not integration"   # only the fast tests (no services needed)
-uv run --group airflow pytest tests/test_dags.py   # DAGs load (installs Airflow)
+make setup     # dependencies, git hooks, and .env with random secrets
+make data      # metadata and a 16-recording sample (or: bash scripts/download_all.sh)
+make up        # Postgres, RustFS, Airflow and the dashboard
+make run       # ingest → features → detections → load → dbt build
+make release   # export the derived datasets to data/release/
 ```
 
-## AWS emulator
-
-The infrastructure is defined for AWS but validated locally against
-[Moto](https://github.com/getmoto/moto), an emulator of the AWS APIs: no AWS
-account and no cost. This project has not been deployed to a real AWS account.
-
-```bash
-make emulator        # start a fresh Moto on localhost:5001 and create its admin user
-make infra-apply     # create the bucket, the pipeline's user and its key with Terraform
-make infra-check     # confirm that key can do only what it should
-make infra-cycle     # create, destroy with data inside and recreate
-make emulator-down   # stop it and erase everything in it
-```
-Moto keeps everything in memory, so each `make emulator` starts from zero. It
-accepts only the 3 requests that create the `terraform-admin` user; after that
-every request needs valid keys, so IAM permissions really apply. The admin's
-credentials are written to `.env.moto` (git-ignored, owner-only).
-
-To run the pipeline against the emulator, with the pipeline's limited key:
-```bash
-make sync-storage    # optional: copy the local bucket's objects, same paths
-make airflow-cloud   # Airflow's tasks now use the emulator and their own catalog
-# trigger soundscape_pipeline in the Airflow UI
-make airflow-local   # back to RustFS and the main database
-```
-Runs against another S3 use a separate database, `soundscape_cloud`, because
-`raw.recordings` must describe what is in the bucket in use. Return to local
-before stopping the emulator: otherwise the daily DAG would fail.
-
-For a real AWS account the code stays the same; only configuration changes:
-copy the two `infra/terraform/envs/aws.*.example` files without `.example`,
-put the admin keys in `.env.aws`, and add `ENV=aws` to the commands above.
-That path has not been run, since this project has no AWS account yet.
-
-Terraform lives in [`infra/terraform`](infra/terraform): the same code targets
-the emulator or a real account, chosen with `ENV=moto|aws`. The pipeline's key
-is created outside Terraform, so the secret never reaches the state.
-
-## Container image
-
-Every push to `main` that passes CI publishes the pipeline as an image on
-GitHub Container Registry, tagged with the commit (`sha-<commit>`) and `latest`.
-It holds only the pipeline package and its locked dependencies (multi-stage
-build, non-root user): about **1.2 GB on disk, ~280 MB to download**, against
-3.9 GB for the Airflow image. Most of it is numba/llvmlite, scipy and pyarrow.
-
-```bash
-docker run --env-file .env ghcr.io/dres3223/soundscape-data-pipeline ingest   # or features, detections, load
-```
-Inside Docker, point the settings at reachable hosts (for example
-`-e POSTGRES_HOST=... -e S3_ENDPOINT_URL=...`) and mount the recordings for
-`ingest` (`-v ...:/data:ro -e INGEST_SOURCE_DIR=/data/...`).
+Then open the dashboard at http://localhost:8501 and Airflow at
+http://localhost:8080. `make` alone lists every command. Every step one at a
+time, the AWS emulator and the container image:
+[docs/how_to_run.md](docs/how_to_run.md).
 
 ## Derived data
 
