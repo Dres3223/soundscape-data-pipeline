@@ -21,7 +21,7 @@ CLOUD_COMPOSE := CLOUD_ENV=$(ENV) CLOUD_S3_ENDPOINT_URL=$(CLOUD_S3_ENDPOINT) \
 	docker compose -f docker-compose.yml -f docker-compose.cloud.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help setup data up down run release test test-dags lint emulator emulator-down \
+.PHONY: help setup data up down run release test test-dags test-dashboard lint emulator emulator-down \
 	infra-init infra-plan infra-apply infra-check infra-destroy infra-test infra-cycle \
 	sync-storage airflow-cloud airflow-local
 
@@ -63,6 +63,9 @@ test: ## Run the tests with coverage (integration tests need `make up`)
 
 test-dags: ## Check the Airflow DAGs load (installs Airflow in .venv)
 	uv run --group airflow pytest tests/test_dags.py --no-cov
+
+test-dashboard: ## Run the dashboard on fake marts (installs Streamlit in .venv)
+	uv run --group dashboard pytest tests/test_dashboard.py --no-cov
 
 lint: ## Run every pre-commit hook on the whole repository
 	uv run pre-commit run --all-files

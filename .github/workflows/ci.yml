@@ -96,7 +96,7 @@ jobs:
           make release
 
   dags:
-    name: Airflow DAGs load
+    name: Airflow DAGs load and dashboard
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -105,6 +105,7 @@ jobs:
         with:
           enable-cache: true
       - run: make test-dags
+      - run: make test-dashboard
 
   terraform:
     name: Terraform against the AWS emulator
