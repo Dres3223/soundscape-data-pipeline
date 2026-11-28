@@ -172,8 +172,13 @@ Solid lines and boxes are built; dashed ones are planned.
 - **Bird detections are automatic.** About 1 in 5 is wrong at the chosen
   thresholds, and most birds present are missed: an absence means little.
 - **Levels are not calibrated.** Compare them within a site, not between sites.
-- **Time and periods are assumptions.** Hours assume local time (UTC-5), and
-  the periods of the day are a working choice.
+- **Quality exclusions are uneven.** 32 of 56 sites lose under 5 % of their
+  recordings, but 7 lose over 20 %, mostly daytime low-frequency noise; for
+  them, daytime averages describe calm moments
+  ([quality review](docs/quality_review.md#effect-on-the-full-dataset)).
+- **Time and periods are assumptions.** Hours assume local time (UTC-5),
+  which the dawn rise in bird detections supports, and the periods of the
+  day are a working choice.
 - **Out of scope:** confirming species without an expert; frogs, insects and
   mammals (BirdNET is for birds); changes between seasons or years; population
   trends or effects of restoration.

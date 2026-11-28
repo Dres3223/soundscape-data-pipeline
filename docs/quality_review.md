@@ -38,11 +38,42 @@ ground truth.
 
 ## Effect
 
-59 of 723 recordings (8 %) are excluded: 4 for heavy rain, 55 for
-low-frequency noise, none for both. The exclusions are not even: **site H24
+On the 723 reviewed recordings, 59 (8 %) are excluded: 4 for heavy rain, 55
+for low-frequency noise, none for both. The exclusions are not even: **site H24
 loses 38 of 178**, and 28 of its 70 daytime recordings. Comparisons that
 involve H24 during the day rest on fewer recordings and may be biased towards
 calm moments.
+
+## Effect on the full dataset
+
+The same thresholds, applied to all 9,726 recordings (56 sites) without a
+new review of spectrograms:
+
+- **836 recordings (8.6 %) are excluded**: 801 for low-frequency noise, 43
+  for heavy rain and 11 for clipping (some have more than one flag). None has
+  a dropout.
+- **The rain gap is gone.** 61 recordings fall between 8.3 and 16.5 dB, and
+  the values around the 12 dB threshold are continuous (23 between 10 and
+  12 dB, 14 between 12 and 14 dB). The threshold is still the one chosen on
+  the sample, but recordings just above and below it were not looked at.
+- **Clipping appears**: 11 recordings pass 0.1 % (at most 1.4 % of samples).
+  They were not reviewed either.
+- **Exclusions are very uneven.** 32 of 56 sites lose under 5 % (the median
+  site 4 %, and 3 sites none), but 7 sites lose more than 20 %: H31 (76 of
+  175), H27 (71 of 175), H32 (66 of 175), H03 (54 of 179), H04 (48 of 176),
+  H14 (41 of 174) and H24 (38 of 178). Almost all of it is low-frequency noise during the day: H27
+  keeps 11 of its 68 daytime recordings, H31 15 of 69 and H32 19 of 71. For
+  these sites, daytime averages describe the calm moments, not a typical
+  day.
+
+The mart reports `n_excluded` for every site and period, and the dashboard
+shows it, so these gaps stay visible.
+
+**Time of day.** The file names do not say their time zone; the pipeline
+assumes Colombian local time (UTC-5). The detections agree: confident BirdNET
+species per recording jump from 0.08 at 4 h to 0.37 at 5 h and fall from
+0.16 at 18 h to 0.05 at 19 h, around sunrise and sunset at the reserve. In
+UTC the dawn chorus would appear five hours later.
 
 ## Limits
 
